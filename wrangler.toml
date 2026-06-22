@@ -1,6 +1,10 @@
 name = "hayeon-ai-studio"
 compatibility_date = "2024-09-23"
-pages_build_output_dir = "."
+main = "worker.js"
+
+[assets]
+directory = "."
+binding = "ASSETS"
 
 [ai]
 binding = "AI"
