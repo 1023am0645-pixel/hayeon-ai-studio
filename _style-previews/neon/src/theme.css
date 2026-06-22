@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800&family=Rajdhani:wght@600;700&display=swap');
+
+/* ===== NEON HQ NOCTURNE — midnight neon ===== */
+body.building-view-active, body.v2-active {
+  background: radial-gradient(120% 90% at 50% 6%, #1b2550 0%, #0e1330 55%, #070914 100%) !important;
+}
+
+/* building frame: cyan glow */
+body.building-view-active .building-stage {
+  border-color: rgba(39,224,224,0.55) !important;
+  box-shadow: 0 0 26px rgba(39,224,224,0.4), 0 18px 44px rgba(0,0,0,0.6), inset 0 0 18px rgba(39,224,224,0.12) !important;
+}
+/* night-tint the building illustration */
+body.building-view-active .building-illustration-layer {
+  filter: brightness(0.62) saturate(1.2) contrast(1.05) hue-rotate(196deg) !important;
+}
+body.building-view-active .building-illustration-layer::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 30%, rgba(39,224,224,0.10), transparent 60%),
+    linear-gradient(180deg, rgba(20,40,90,0.42), rgba(8,12,30,0.5));
+  mix-blend-mode: screen;
+}
+
+/* sign: neon */
+body.v2-active .topbar-wordmark {
+  background: linear-gradient(180deg, rgba(40,60,110,0.42), rgba(10,16,40,0.6)) !important;
+  border: 1px solid #27e0e0 !important;
+  box-shadow: 0 0 22px rgba(39,224,224,0.4), inset 0 0 18px rgba(39,224,224,0.18) !important;
+  backdrop-filter: blur(6px) !important;
+}
+body.v2-active .topbar-wordmark::before { background: linear-gradient(180deg, rgba(39,224,224,0.16), transparent) !important; }
+body.v2-active .topbar-wordmark .wordmark-main {
+  font-family: 'Orbitron', sans-serif !important; font-weight: 800 !important; color: #eafcff !important;
+  text-shadow: 0 0 10px #27e0e0, 0 0 22px rgba(39,224,224,0.7) !important;
+}
+body.v2-active .topbar-wordmark .wordmark-sub {
+  font-family: 'Rajdhani', sans-serif !important; font-weight: 700 !important; color: #ff5fd0 !important;
+  text-shadow: 0 0 12px rgba(255,95,208,0.7) !important;
+}
+body.v2-active .topbar-wordmark .wordmark-space { color: #7fa8d8 !important; text-shadow: none !important; letter-spacing: 0.5em !important; }
+body.v2-active .topbar-wordmark .wordmark-colon i:first-child { border-top-color: #27e0e0 !important; }
+body.v2-active .topbar-wordmark .wordmark-colon i:last-child { border-bottom-color: #27e0e0 !important; }
+body.v2-active .topbar-wordmark .wordmark-colon { filter: drop-shadow(0 0 6px #27e0e0) !important; }
+body.v2-active .topbar-wordmark .brand-bolt { display: none !important; }
+
+/* activity bar + bottom strip: dark glass, cyan text */
+body.building-view-active .ui-overlay-layer .live-activity-bar {
+  background: linear-gradient(90deg, rgba(20,40,80,0.7), rgba(12,18,44,0.7)) !important;
+  border: 1px solid rgba(39,224,224,0.35) !important; color: #bfeffe !important;
+}
+body.building-view-active .ui-overlay-layer .live-activity-bar strong { color: #27e0e0 !important; }
+body.building-view-active .ui-overlay-layer .live-activity-bar span { color: #bfeffe !important; }
+body.v2-active .bottom-info-strip {
+  background: linear-gradient(180deg, rgba(22,34,72,0.9), rgba(8,12,30,0.94)) !important;
+  border: 1px solid rgba(39,224,224,0.3) !important;
+}
+body.v2-active .bottom-info-strip, body.v2-active .bottom-info-strip * { color: #cfe6f5 !important; }
+body.v2-active .bottom-info-strip strong { background: #27e0e0 !important; color: #04232a !important; }
+body.v2-active .bottom-info-strip .office-census { color: #5ef0f0 !important; }
+
+/* floor labels */
+body.building-view-active .floor-hit-title, body.building-view-active .floor-hit-badge {
+  background: rgba(16,24,56,0.78) !important; color: #bfeffe !important; border-color: rgba(39,224,224,0.35) !important;
+}
+body.building-view-active .floor-hit-title strong { color: #27e0e0 !important; }
