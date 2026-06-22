@@ -63,7 +63,6 @@ const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
 const orchestrationUi = {
   isRunning: false,
-  items: [],
 };
 
 boot();
@@ -96,6 +95,7 @@ function getInitialState() {
   return {
     employees: clone(seedEmployees),
     tasks: clone(seedTasks),
+    orch: getInitialOrchState(),
     currentView: "building",
     selectedFloorId: null,
     selectedEmployeeId: null,
@@ -118,10 +118,36 @@ function loadState() {
       detailMode: "summary",
       employees: hydrateEmployees(parsed.employees),
       tasks: hydrateTasks(parsed.tasks),
+      orch: hydrateOrch(parsed.orch),
     };
   } catch {
     return getInitialState();
   }
+}
+
+function getInitialOrchState() {
+  return {
+    running: false,
+    goal: "",
+    items: [],
+    summary: "",
+    summaryError: "",
+    tasks: [],
+    startedAt: 0,
+    completedAt: 0,
+  };
+}
+
+function hydrateOrch(savedOrch = {}) {
+  const base = getInitialOrchState();
+  if (!savedOrch || typeof savedOrch !== "object") return base;
+  return {
+    ...base,
+    ...savedOrch,
+    running: false,
+    items: Array.isArray(savedOrch.items) ? savedOrch.items : [],
+    tasks: Array.isArray(savedOrch.tasks) ? savedOrch.tasks : [],
+  };
 }
 
 function hydrateEmployees(savedEmployees = []) {
@@ -408,19 +434,12 @@ function openOrchestrationPanel() {
   refs.orchestrationBackdrop.classList.remove("is-hidden");
   refs.orchestrationPanel.classList.remove("is-hidden");
   refs.orchestrationPanel.setAttribute("aria-hidden", "false");
-  if (!orchestrationUi.items.length) {
-    refs.orchestrationProgress.textContent =
-      "목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.";
-    refs.orchestrationResults.innerHTML = "";
-  }
+  renderStoredOrchestrationPanel();
   refs.orchestrationGoal.focus();
 }
 
 function closeOrchestrationPanel() {
-  if (orchestrationUi.isRunning) {
-    showToast("오케스트레이션 실행 중입니다. 완료 후 닫을 수 있습니다.");
-    return;
-  }
+  if (state.orch.running) showToast("분배는 백그라운드에서 계속 진행됩니다.");
   refs.orchestrationPanel.classList.add("is-hidden");
   refs.orchestrationBackdrop.classList.add("is-hidden");
   refs.orchestrationPanel.setAttribute("aria-hidden", "true");
@@ -434,10 +453,17 @@ async function handleOrchestrationSubmit(event) {
   if (!goal) return;
 
   orchestrationUi.isRunning = true;
-  orchestrationUi.items = [];
+  state.orch = {
+    ...getInitialOrchState(),
+    running: true,
+    goal,
+    startedAt: Date.now(),
+  };
+  saveState();
   refs.orchestrationResults.innerHTML = "";
   closeOrchestrationDetail();
   renderOrchestrationProgress();
+  renderOrchestrationBadge();
 
   const submitButton = refs.orchestrationForm.querySelector("button[type='submit']");
   submitButton.disabled = true;
@@ -447,14 +473,22 @@ async function handleOrchestrationSubmit(event) {
     const result = await runOrchestrationToBoard(goal, {
       onUpdate: (update) => {
         upsertOrchestrationItem(update);
+        saveState();
         renderOrchestrationProgress();
+        renderOrchestrationBadge();
       },
     });
+    syncOrchestrationResult(result);
     renderOrchestrationProgress(result);
     renderOrchestrationResults(result);
+    showToast("분배 완료 — 결과를 확인하세요.");
   } catch (err) {
     console.error("orchestration error:", err);
     const message = err && err.message ? err.message : String(err);
+    state.orch.running = false;
+    state.orch.summaryError = message;
+    state.orch.completedAt = Date.now();
+    saveState();
     refs.orchestrationProgress.innerHTML = `
       <strong>실행 실패</strong>
       <span>${escapeHtml(message)}</span>
@@ -463,6 +497,7 @@ async function handleOrchestrationSubmit(event) {
     orchestrationUi.isRunning = false;
     submitButton.disabled = false;
     refs.orchestrationGoal.disabled = false;
+    renderOrchestrationBadge();
   }
 }
 
@@ -478,7 +513,8 @@ function upsertOrchestrationItem(update) {
     "summary-error": "error",
   };
   const nextStatus = statusByPhase[update.phase] ?? "queued";
-  const index = orchestrationUi.items.findIndex((item) => item.key === key);
+  state.orch.items = Array.isArray(state.orch.items) ? state.orch.items : [];
+  const index = state.orch.items.findIndex((item) => item.key === key);
   const patch = {
     key,
     employeeId: update.employee?.id ?? "",
@@ -492,16 +528,16 @@ function upsertOrchestrationItem(update) {
   };
 
   if (index >= 0) {
-    orchestrationUi.items[index] = {
-      ...orchestrationUi.items[index],
+    state.orch.items[index] = {
+      ...state.orch.items[index],
       ...patch,
-      text: patch.text || orchestrationUi.items[index].text,
-      error: patch.error || orchestrationUi.items[index].error,
+      text: patch.text || state.orch.items[index].text,
+      error: patch.error || state.orch.items[index].error,
     };
     return;
   }
 
-  orchestrationUi.items.push(patch);
+  state.orch.items.push(patch);
 }
 
 function handleOrchestrationDetailClick(event) {
@@ -519,7 +555,7 @@ function handleOrchestrationDetailKeydown(event) {
 }
 
 function findOrchestrationItem(key) {
-  return orchestrationUi.items.find((item) => item.key === key) ?? null;
+  return state.orch.items.find((item) => item.key === key) ?? null;
 }
 
 function openOrchestrationDetail(key) {
@@ -559,11 +595,12 @@ function closeOrchestrationDetail() {
 }
 
 function renderOrchestrationProgress(result = null) {
-  const taskItems = orchestrationUi.items.filter((item) => !item.isSummary);
+  const items = Array.isArray(state.orch.items) ? state.orch.items : [];
+  const taskItems = items.filter((item) => !item.isSummary);
   const doneCount = taskItems.filter((item) => item.status === "done").length;
   const errorCount = taskItems.filter((item) => item.status === "error").length;
   const activeCount = taskItems.filter((item) => item.status === "running").length;
-  const progressRows = orchestrationUi.items.map((item) => {
+  const progressRows = items.map((item) => {
     const statusLabels = {
       queued: "대기",
       running: item.isSummary ? "요약 중" : "처리 중",
@@ -600,6 +637,61 @@ function renderOrchestrationProgress(result = null) {
     <span>완료 ${doneCount}명 · 처리 중 ${Math.max(activeCount, 0)}명 · 오류 ${errorCount}명</span>
     ${progressRows ? `<ul>${progressRows}</ul>` : "<p>매니저가 필요한 직원을 선정하고 있습니다.</p>"}
   `;
+}
+
+function renderStoredOrchestrationPanel() {
+  if (!state.orch.items.length && !state.orch.goal) {
+    refs.orchestrationProgress.textContent =
+      "목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.";
+    refs.orchestrationResults.innerHTML = "";
+    closeOrchestrationDetail();
+    return;
+  }
+
+  const result = buildStoredOrchestrationResult();
+  renderOrchestrationProgress(state.orch.running ? null : result);
+  if (state.orch.running) {
+    refs.orchestrationResults.innerHTML = "";
+    return;
+  }
+  renderOrchestrationResults(result);
+}
+
+function buildStoredOrchestrationResult() {
+  const taskItems = (state.orch.items ?? []).filter((item) => !item.isSummary);
+  return {
+    goal: state.orch.goal,
+    plan: taskItems.map((item) => ({ employeeId: item.employeeId, subtask: item.subtask })),
+    tasks: state.orch.tasks ?? [],
+    results: taskItems.map((item) => {
+      const employee = getEmployee(item.employeeId);
+      return {
+        key: item.key,
+        employeeId: item.employeeId,
+        employeeName: item.name || employee?.name || item.employeeId,
+        role: employee?.role ?? "",
+        subtask: item.subtask,
+        text: item.text,
+        error: item.error,
+      };
+    }),
+    summary: state.orch.summary,
+    summaryError: state.orch.summaryError,
+  };
+}
+
+function syncOrchestrationResult(result) {
+  state.orch.running = false;
+  state.orch.summary = result.summary ?? "";
+  state.orch.summaryError = result.summaryError ?? "";
+  state.orch.tasks = (result.tasks ?? []).map((task) => ({
+    id: task.id,
+    title: task.title,
+    assigneeId: task.assigneeId,
+    status: task.status,
+  }));
+  state.orch.completedAt = Date.now();
+  saveState();
 }
 
 function renderOrchestrationResults(result) {
@@ -686,6 +778,38 @@ function render() {
   renderActiveView();
   renderEmployeeDetail();
   renderKanban();
+  renderOrchestrationBadge();
+}
+
+function renderOrchestrationBadge() {
+  const items = (state.orch.items ?? []).filter((item) => !item.isSummary);
+  const doneCount = items.filter((item) => item.status === "done" || item.status === "error").length;
+  const totalCount = items.length;
+
+  if (state.orch.running) {
+    refs.openOrchestrationButton.classList.add("has-orch-progress");
+    refs.openOrchestrationButton.classList.remove("is-complete");
+    refs.openOrchestrationButton.innerHTML = `
+      <span aria-hidden="true">🛠</span>
+      <strong class="orch-nav-count">${doneCount}/${Math.max(totalCount, 1)}</strong>
+    `;
+    refs.openOrchestrationButton.setAttribute("aria-label", `오케스트레이션 진행 ${doneCount}/${Math.max(totalCount, 1)}`);
+    refs.openOrchestrationButton.setAttribute("title", `오케스트레이션 진행 ${doneCount}/${Math.max(totalCount, 1)}`);
+    return;
+  }
+
+  if (totalCount || state.orch.summary || state.orch.summaryError) {
+    refs.openOrchestrationButton.classList.add("has-orch-progress", "is-complete");
+    refs.openOrchestrationButton.innerHTML = `<span aria-hidden="true">✓</span>`;
+    refs.openOrchestrationButton.setAttribute("aria-label", "오케스트레이션 결과 보기");
+    refs.openOrchestrationButton.setAttribute("title", "오케스트레이션 결과 보기");
+    return;
+  }
+
+  refs.openOrchestrationButton.classList.remove("has-orch-progress", "is-complete");
+  refs.openOrchestrationButton.innerHTML = `<span aria-hidden="true">🧭</span>`;
+  refs.openOrchestrationButton.setAttribute("aria-label", "전 직원에게 지시");
+  refs.openOrchestrationButton.setAttribute("title", "전 직원에게 지시");
 }
 
 function renderActiveView() {

@@ -5993,6 +5993,26 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   min-width: 54px;
 }
 
+.orchestration-nav-button.has-orch-progress {
+  background: rgba(202, 161, 90, 0.26) !important;
+  border-color: rgba(255, 230, 166, 0.40) !important;
+}
+
+.orchestration-nav-button.is-complete {
+  background: rgba(115, 211, 155, 0.24) !important;
+}
+
+.orch-nav-count {
+  min-width: 28px;
+  height: 20px;
+  padding: 0 6px;
+  color: #241509;
+  background: #ffe6a6;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  line-height: 20px;
+}
+
 .orchestration-backdrop {
   position: fixed;
   inset: 0;
