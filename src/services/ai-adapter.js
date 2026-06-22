@@ -164,6 +164,48 @@ async function planTasks(goal, employees) {
   return parsedPlan.length ? parsedPlan : ruleBasedPlan(cleanGoal, employees);
 }
 
+async function runOrchestration(goal, employees, { onUpdate } = {}) {
+  const cleanGoal = String(goal ?? "").trim();
+  if (!cleanGoal) return { goal: cleanGoal, plan: [], results: [] };
+
+  const plan = await planTasks(cleanGoal, employees);
+  const results = [];
+
+  for (const item of plan) {
+    const employee = employees.find((entry) => entry.id === item.employeeId);
+    if (!employee) continue;
+
+    onUpdate?.({ phase: "start", employee, subtask: item.subtask });
+
+    try {
+      const text = await requestEmployeeReply(employee, item.subtask);
+      const result = {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        role: employee.role,
+        subtask: item.subtask,
+        text,
+      };
+      results.push(result);
+      onUpdate?.({ phase: "done", employee, subtask: item.subtask, text });
+    } catch (err) {
+      const error = err && err.message ? err.message : String(err);
+      const result = {
+        employeeId: employee.id,
+        employeeName: employee.name,
+        role: employee.role,
+        subtask: item.subtask,
+        text: "",
+        error,
+      };
+      results.push(result);
+      onUpdate?.({ phase: "error", employee, subtask: item.subtask, error });
+    }
+  }
+
+  return { goal: cleanGoal, plan, results };
+}
+
 window.HayeonAiAdapter = {
   aiProviderSlots,
   buildEmployeePrompt,
@@ -173,5 +215,6 @@ window.HayeonAiAdapter = {
   parsePlanJson,
   ruleBasedPlan,
   planTasks,
+  runOrchestration,
 };
 })();
