@@ -70,23 +70,33 @@ function buildPlanningSystemPrompt(employees) {
     "각 직원에게 그 사람의 역할에 맞는 '구체적이고 실행 가능한 세부지시'를 만든다.",
     "규칙:",
     "1) 반드시 JSON 배열만 출력. 설명/머리말 금지.",
-    "2) 형식: [{\"employeeId\":\"<id>\",\"subtask\":\"<한국어 세부지시>\"}]",
+    "2) 형식: [{\"employeeId\":\"<id>\",\"subtask\":\"<한국어 세부지시>\",\"needsReview\":true|false}]",
     "3) employeeId는 반드시 명단의 id와 정확히 일치.",
     "4) 목표와 무관한 직원은 절대 넣지 마라. 보통 3~6명.",
+    "5) 외부 공개·발표·보고·고객 전송처럼 사람이 확인해야 하는 과제는 needsReview:true, 내부 초안성 작업은 false로 표시하라.",
     "",
     "[직원 명단]",
     roster,
     "",
     "[예시] 목표: \"다음달 신입 입문교육 준비\"",
-    "[{\"employeeId\":\"lecture-pd\",\"subtask\":\"신입 대상 90분 입문교육 강의 흐름안(도입·본론·실습·마무리) 작성\"},",
-    " {\"employeeId\":\"prompt-engineer\",\"subtask\":\"입문교육 핵심 개념 교안 초안 작성\"},",
-    " {\"employeeId\":\"ppt-designer\",\"subtask\":\"교안 기반 슬라이드 구성/제목 문구 정리\"},",
-    " {\"employeeId\":\"case-developer\",\"subtask\":\"신입이 따라할 실습 예시 3개 설계\"},",
-    " {\"employeeId\":\"schedule-bot\",\"subtask\":\"교육 일정·준비 마감일 정리\"}]",
+    "[{\"employeeId\":\"lecture-pd\",\"subtask\":\"신입 대상 90분 입문교육 강의 흐름안(도입·본론·실습·마무리) 작성\",\"needsReview\":false},",
+    " {\"employeeId\":\"prompt-engineer\",\"subtask\":\"입문교육 핵심 개념 교안 초안 작성\",\"needsReview\":false},",
+    " {\"employeeId\":\"ppt-designer\",\"subtask\":\"교안 기반 슬라이드 구성/제목 문구 정리\",\"needsReview\":true},",
+    " {\"employeeId\":\"case-developer\",\"subtask\":\"신입이 따라할 실습 예시 3개 설계\",\"needsReview\":false},",
+    " {\"employeeId\":\"schedule-bot\",\"subtask\":\"교육 일정·준비 마감일 정리\",\"needsReview\":false}]",
   ].join("\n");
 }
 
-function parsePlanJson(text, employees) {
+const reviewEmployeeIds = new Set(["report-writer", "ax-pm", "brand-strategist"]);
+const reviewKeywords = ["발표", "보고", "대외", "고객", "제출", "공개"];
+
+function needsReview(item, goal = "") {
+  const employeeId = String(item?.employeeId ?? "");
+  const text = `${item?.subtask ?? ""} ${goal ?? ""}`;
+  return reviewEmployeeIds.has(employeeId) || reviewKeywords.some((keyword) => text.includes(keyword));
+}
+
+function parsePlanJson(text, employees, goal = "") {
   try {
     const match = String(text ?? "").match(/\[[\s\S]*\]/);
     if (!match) return [];
@@ -104,6 +114,9 @@ function parsePlanJson(text, employees) {
       .map((item) => ({
         employeeId: item.employeeId,
         subtask: item.subtask.trim(),
+        needsReview: item.needsReview === true
+          || String(item.needsReview).toLowerCase() === "true"
+          || needsReview(item, goal),
       }));
   } catch {
     return [];
@@ -135,12 +148,13 @@ function ruleBasedPlan(goal, employees) {
   rules.forEach(([keywords, employeeId, subtask]) => {
     const alreadyPicked = picked.some((item) => item.employeeId === employeeId);
     if (!alreadyPicked && hasEmployee(employeeId) && keywords.some((keyword) => normalizedGoal.includes(keyword))) {
-      picked.push({ employeeId, subtask: `${cleanGoal} — ${subtask}` });
+      const fullSubtask = `${cleanGoal} — ${subtask}`;
+      picked.push({ employeeId, subtask: fullSubtask, needsReview: needsReview({ employeeId, subtask: fullSubtask }, cleanGoal) });
     }
   });
 
   if (!picked.length && hasEmployee("chief-assistant")) {
-    picked.push({ employeeId: "chief-assistant", subtask: cleanGoal });
+    picked.push({ employeeId: "chief-assistant", subtask: cleanGoal, needsReview: needsReview({ employeeId: "chief-assistant", subtask: cleanGoal }, cleanGoal) });
   }
 
   return picked;
@@ -160,7 +174,7 @@ async function planTasks(goal, employees) {
 
   const data = await res.json();
   if (!data.text) throw new Error(data.error || "empty planner response");
-  const parsedPlan = parsePlanJson(data.text, employees);
+  const parsedPlan = parsePlanJson(data.text, employees, cleanGoal);
   return parsedPlan.length ? parsedPlan : ruleBasedPlan(cleanGoal, employees);
 }
 
@@ -294,6 +308,7 @@ window.HayeonAiAdapter = {
   buildPlanningSystemPrompt,
   parsePlanJson,
   ruleBasedPlan,
+  needsReview,
   planTasks,
   runOrchestration,
   summarizeOrchestration,

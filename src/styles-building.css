@@ -6154,6 +6154,15 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   background: #c45b48;
 }
 
+.orch-progress-item.is-review span {
+  color: #2d1b08;
+  background: #e3ad45;
+}
+
+.orch-progress-item.is-skipped span {
+  background: #8f806e;
+}
+
 .orch-progress-item strong,
 .orch-progress-item em {
   min-width: 0;
@@ -6165,6 +6174,36 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .orch-progress-item em {
   color: rgba(68, 43, 20, 0.58);
   font-style: normal;
+}
+
+.orch-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.orch-review-actions button {
+  min-height: 26px;
+  padding: 4px 8px;
+  color: #4a2f13;
+  background: rgba(255, 248, 231, 0.82);
+  border: 1px solid rgba(173, 120, 40, 0.26);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.orch-review-actions button:hover,
+.orch-review-actions button:focus-visible {
+  background: rgba(255, 231, 173, 0.92);
+  border-color: rgba(173, 120, 40, 0.42);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .orchestration-results {
@@ -6458,6 +6497,12 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 
   .orch-progress-item em {
     grid-column: 1 / -1;
+  }
+
+  .orch-review-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 

@@ -10,7 +10,12 @@ const {
   tasks: seedTasks,
 } = window.HayeonOfficeData;
 
-const { createSimulatedReply, runOrchestration } = window.HayeonAiAdapter;
+const {
+  createSimulatedReply,
+  planTasks,
+  requestEmployeeReply,
+  summarizeOrchestration,
+} = window.HayeonAiAdapter;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -347,6 +352,7 @@ function bindEvents() {
   });
 
   refs.orchestrationForm.addEventListener("submit", handleOrchestrationSubmit);
+  refs.orchestrationProgress.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationProgress.addEventListener("keydown", handleOrchestrationDetailKeydown);
@@ -481,7 +487,7 @@ async function handleOrchestrationSubmit(event) {
     syncOrchestrationResult(result);
     renderOrchestrationProgress(result);
     renderOrchestrationResults(result);
-    showToast("분배 완료 — 결과를 확인하세요.");
+    showToast(result.pendingReview ? "검토가 필요한 업무를 확인하세요." : "분배 완료 — 결과를 확인하세요.");
   } catch (err) {
     console.error("orchestration error:", err);
     const message = err && err.message ? err.message : String(err);
@@ -493,6 +499,7 @@ async function handleOrchestrationSubmit(event) {
       <strong>실행 실패</strong>
       <span>${escapeHtml(message)}</span>
     `;
+    renderOrchestrationBadge();
   } finally {
     orchestrationUi.isRunning = false;
     submitButton.disabled = false;
@@ -505,9 +512,12 @@ function upsertOrchestrationItem(update) {
   const employeeName = update.employee?.name ?? "직원";
   const key = update.key ?? `${update.employee?.id ?? employeeName}#${update.subtask ?? ""}`;
   const statusByPhase = {
+    queued: "queued",
+    review: "review",
     start: "running",
     done: "done",
     error: "error",
+    skipped: "skipped",
     "summary-start": "running",
     "summary-done": "done",
     "summary-error": "error",
@@ -524,6 +534,8 @@ function upsertOrchestrationItem(update) {
     phase: update.phase,
     text: update.text ?? "",
     error: update.error ?? "",
+    needsReview: Boolean(update.needsReview),
+    taskId: update.taskId ?? "",
     isSummary: key === "summary" || String(update.phase).startsWith("summary-"),
   };
 
@@ -533,6 +545,8 @@ function upsertOrchestrationItem(update) {
       ...patch,
       text: patch.text || state.orch.items[index].text,
       error: patch.error || state.orch.items[index].error,
+      needsReview: patch.needsReview || Boolean(state.orch.items[index].needsReview),
+      taskId: patch.taskId || state.orch.items[index].taskId,
     };
     return;
   }
@@ -540,13 +554,39 @@ function upsertOrchestrationItem(update) {
   state.orch.items.push(patch);
 }
 
+function handleOrchestrationReviewAction(event) {
+  const actionButton = event.target.closest("[data-orch-action]");
+  if (!actionButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const itemNode = actionButton.closest("[data-orch-key]");
+  const key = itemNode?.dataset.orchKey;
+  if (!key) return;
+
+  const action = actionButton.dataset.orchAction;
+  if (action === "approve") {
+    approveOrchestrationItem(key);
+    return;
+  }
+  if (action === "edit") {
+    editOrchestrationItem(key);
+    return;
+  }
+  if (action === "skip") {
+    skipOrchestrationItem(key);
+  }
+}
+
 function handleOrchestrationDetailClick(event) {
+  if (event.target.closest("[data-orch-action]")) return;
   const itemNode = event.target.closest("[data-orch-key]");
   if (!itemNode) return;
   openOrchestrationDetail(itemNode.dataset.orchKey);
 }
 
 function handleOrchestrationDetailKeydown(event) {
+  if (event.target.closest("[data-orch-action]")) return;
   if (event.key !== "Enter" && event.key !== " ") return;
   const itemNode = event.target.closest("[data-orch-key]");
   if (!itemNode) return;
@@ -556,6 +596,56 @@ function handleOrchestrationDetailKeydown(event) {
 
 function findOrchestrationItem(key) {
   return state.orch.items.find((item) => item.key === key) ?? null;
+}
+
+async function approveOrchestrationItem(key) {
+  const item = findOrchestrationItem(key);
+  if (!item || item.status !== "review" || orchestrationUi.isRunning) return;
+
+  orchestrationUi.isRunning = true;
+  state.orch.running = true;
+  saveState();
+  renderOrchestrationProgress();
+  renderOrchestrationBadge();
+
+  try {
+    await executeOrchestrationItem(item, { onUpdate: applyOrchestrationUpdate });
+    await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
+  } finally {
+    orchestrationUi.isRunning = false;
+    renderOrchestrationBadge();
+  }
+}
+
+function editOrchestrationItem(key) {
+  const item = findOrchestrationItem(key);
+  if (!item || item.status !== "review") return;
+  const nextSubtask = window.prompt("검토 후 실행할 지시문을 수정하세요.", item.subtask);
+  if (!nextSubtask?.trim()) return;
+
+  item.subtask = nextSubtask.trim();
+  item.text = "";
+  item.error = "";
+  item.phase = "review";
+  saveState();
+  renderOrchestrationProgress();
+  openOrchestrationDetail(key);
+  showToast("검토 지시문을 수정했습니다.");
+}
+
+async function skipOrchestrationItem(key) {
+  const item = findOrchestrationItem(key);
+  if (!item || item.status !== "review") return;
+
+  item.status = "skipped";
+  item.phase = "skipped";
+  item.text = "";
+  item.error = "";
+  saveState();
+  renderOrchestrationProgress();
+  renderOrchestrationBadge();
+  showToast(`${item.name} 업무를 건너뛰었습니다.`);
+  await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
 }
 
 function openOrchestrationDetail(key) {
@@ -599,16 +689,29 @@ function renderOrchestrationProgress(result = null) {
   const taskItems = items.filter((item) => !item.isSummary);
   const doneCount = taskItems.filter((item) => item.status === "done").length;
   const errorCount = taskItems.filter((item) => item.status === "error").length;
-  const activeCount = taskItems.filter((item) => item.status === "running").length;
+  const activeCount = taskItems.filter((item) => item.status === "running" || item.status === "queued").length;
+  const reviewCount = taskItems.filter((item) => item.status === "review").length;
+  const skippedCount = taskItems.filter((item) => item.status === "skipped").length;
   const progressRows = items.map((item) => {
     const statusLabels = {
       queued: "대기",
+      review: "검토 필요",
       running: item.isSummary ? "요약 중" : "처리 중",
       done: item.isSummary ? "요약 완료" : "완료",
       error: item.isSummary ? "요약 오류" : "오류",
+      skipped: "건너뜀",
     };
     const statusLabel = statusLabels[item.status] ?? "진행";
     const statusClass = String(item.status).replace(/[^a-z0-9-]/gi, "-");
+    const reviewActions = item.status === "review"
+      ? `
+        <div class="orch-review-actions" aria-label="${escapeHtml(item.name)} 검토 액션">
+          <button type="button" data-orch-action="approve">승인</button>
+          <button type="button" data-orch-action="edit">수정</button>
+          <button type="button" data-orch-action="skip">건너뛰기</button>
+        </div>
+      `
+      : "";
     return `
       <li
         class="orch-progress-item is-${escapeHtml(statusClass)} ${item.isSummary ? "is-summary" : ""}"
@@ -619,9 +722,19 @@ function renderOrchestrationProgress(result = null) {
         <span>${escapeHtml(statusLabel)}</span>
         <strong>${escapeHtml(item.name)}</strong>
         <em>${escapeHtml(item.subtask ?? "")}</em>
+        ${reviewActions}
       </li>
     `;
   }).join("");
+
+  if (reviewCount) {
+    refs.orchestrationProgress.innerHTML = `
+      <strong>검토 대기</strong>
+      <span>${reviewCount}개 업무는 승인 후 실행됩니다. 완료 ${doneCount}명 · 처리 중 ${activeCount}명 · 오류 ${errorCount}명 · 건너뜀 ${skippedCount}명</span>
+      ${progressRows ? `<ul>${progressRows}</ul>` : ""}
+    `;
+    return;
+  }
 
   if (result) {
     refs.orchestrationProgress.innerHTML = `
@@ -659,11 +772,12 @@ function renderStoredOrchestrationPanel() {
 
 function buildStoredOrchestrationResult() {
   const taskItems = (state.orch.items ?? []).filter((item) => !item.isSummary);
+  const resultItems = taskItems.filter((item) => item.status === "done" || item.status === "error");
   return {
     goal: state.orch.goal,
-    plan: taskItems.map((item) => ({ employeeId: item.employeeId, subtask: item.subtask })),
+    plan: taskItems.map((item) => ({ employeeId: item.employeeId, subtask: item.subtask, needsReview: Boolean(item.needsReview) })),
     tasks: state.orch.tasks ?? [],
-    results: taskItems.map((item) => {
+    results: resultItems.map((item) => {
       const employee = getEmployee(item.employeeId);
       return {
         key: item.key,
@@ -690,7 +804,7 @@ function syncOrchestrationResult(result) {
     assigneeId: task.assigneeId,
     status: task.status,
   }));
-  state.orch.completedAt = Date.now();
+  state.orch.completedAt = result.pendingReview ? 0 : Date.now();
   saveState();
 }
 
@@ -783,7 +897,8 @@ function render() {
 
 function renderOrchestrationBadge() {
   const items = (state.orch.items ?? []).filter((item) => !item.isSummary);
-  const doneCount = items.filter((item) => item.status === "done" || item.status === "error").length;
+  const doneCount = items.filter((item) => item.status === "done" || item.status === "error" || item.status === "skipped").length;
+  const reviewCount = items.filter((item) => item.status === "review").length;
   const totalCount = items.length;
 
   if (state.orch.running) {
@@ -795,6 +910,18 @@ function renderOrchestrationBadge() {
     `;
     refs.openOrchestrationButton.setAttribute("aria-label", `오케스트레이션 진행 ${doneCount}/${Math.max(totalCount, 1)}`);
     refs.openOrchestrationButton.setAttribute("title", `오케스트레이션 진행 ${doneCount}/${Math.max(totalCount, 1)}`);
+    return;
+  }
+
+  if (reviewCount) {
+    refs.openOrchestrationButton.classList.add("has-orch-progress");
+    refs.openOrchestrationButton.classList.remove("is-complete");
+    refs.openOrchestrationButton.innerHTML = `
+      <span aria-hidden="true">⚠</span>
+      <strong class="orch-nav-count">${reviewCount}</strong>
+    `;
+    refs.openOrchestrationButton.setAttribute("aria-label", `오케스트레이션 검토 대기 ${reviewCount}건`);
+    refs.openOrchestrationButton.setAttribute("title", `오케스트레이션 검토 대기 ${reviewCount}건`);
     return;
   }
 
@@ -1858,36 +1985,186 @@ function createOrchestrationTask(employeeId, title) {
   return state.tasks.length > beforeCount ? state.tasks[0] : null;
 }
 
+function applyOrchestrationUpdate(update) {
+  upsertOrchestrationItem(update);
+  saveState();
+  renderOrchestrationProgress();
+  renderOrchestrationBadge();
+}
+
+function rememberOrchestrationTask(task) {
+  if (!task) return;
+  state.orch.tasks = Array.isArray(state.orch.tasks) ? state.orch.tasks : [];
+  if (state.orch.tasks.some((item) => item.id === task.id)) return;
+  state.orch.tasks.push({
+    id: task.id,
+    title: task.title,
+    assigneeId: task.assigneeId,
+    status: task.status,
+  });
+}
+
+async function executeOrchestrationItem(item, { onUpdate } = {}) {
+  const employee = getEmployee(item.employeeId);
+  if (!employee) return null;
+
+  onUpdate?.({
+    phase: "start",
+    key: item.key,
+    employee,
+    subtask: item.subtask,
+    needsReview: Boolean(item.needsReview),
+  });
+  setEmployeeForTask(employee.id, employee.currentTaskId ?? null, "working");
+  saveState();
+  render();
+  showToast(`${employee.name}: 세부 업무 처리 중…`);
+
+  try {
+    const text = await requestEmployeeReply(employee, item.subtask);
+    const task = createOrchestrationTask(employee.id, item.subtask);
+    rememberOrchestrationTask(task);
+    onUpdate?.({
+      phase: "done",
+      key: item.key,
+      employee,
+      subtask: item.subtask,
+      text,
+      taskId: task?.id,
+      needsReview: Boolean(item.needsReview),
+    });
+    return {
+      key: item.key,
+      employeeId: employee.id,
+      employeeName: employee.name,
+      role: employee.role,
+      subtask: item.subtask,
+      text,
+    };
+  } catch (err) {
+    const error = err && err.message ? err.message : String(err);
+    const task = createOrchestrationTask(employee.id, item.subtask);
+    rememberOrchestrationTask(task);
+    onUpdate?.({
+      phase: "error",
+      key: item.key,
+      employee,
+      subtask: item.subtask,
+      error,
+      taskId: task?.id,
+      needsReview: Boolean(item.needsReview),
+    });
+    return {
+      key: item.key,
+      employeeId: employee.id,
+      employeeName: employee.name,
+      role: employee.role,
+      subtask: item.subtask,
+      text: "",
+      error,
+    };
+  }
+}
+
+function hasPendingOrchestrationWork() {
+  return (state.orch.items ?? [])
+    .filter((item) => !item.isSummary)
+    .some((item) => item.status === "review" || item.status === "queued" || item.status === "running");
+}
+
+function getSummaryEmployee() {
+  return getEmployee("control-bot") ?? getEmployee("chief-assistant") ?? state.employees[0];
+}
+
+async function finishOrchestrationIfReady({ onUpdate } = {}) {
+  const pendingReview = (state.orch.items ?? []).some((item) => !item.isSummary && item.status === "review");
+  if (hasPendingOrchestrationWork()) {
+    state.orch.running = false;
+    saveState();
+    renderOrchestrationProgress({ ...buildStoredOrchestrationResult(), pendingReview });
+    renderOrchestrationResults({ ...buildStoredOrchestrationResult(), pendingReview });
+    renderOrchestrationBadge();
+    return { ...buildStoredOrchestrationResult(), pendingReview };
+  }
+
+  const baseResult = buildStoredOrchestrationResult();
+  const summaryEmployee = getSummaryEmployee();
+  let summary = state.orch.summary ?? "";
+  let summaryError = state.orch.summaryError ?? "";
+
+  if (!state.orch.completedAt && !summary && !summaryError && baseResult.results.length && summaryEmployee) {
+    onUpdate?.({
+      phase: "summary-start",
+      key: "summary",
+      employee: summaryEmployee,
+      subtask: "직원별 산출물 종합 요약",
+    });
+
+    try {
+      summary = await summarizeOrchestration(state.orch.goal, baseResult.results, state.employees);
+      onUpdate?.({
+        phase: "summary-done",
+        key: "summary",
+        employee: summaryEmployee,
+        subtask: "직원별 산출물 종합 요약",
+        text: summary,
+      });
+    } catch (err) {
+      summaryError = err && err.message ? err.message : String(err);
+      onUpdate?.({
+        phase: "summary-error",
+        key: "summary",
+        employee: summaryEmployee,
+        subtask: "직원별 산출물 종합 요약",
+        error: summaryError,
+      });
+    }
+  }
+
+  const result = {
+    ...buildStoredOrchestrationResult(),
+    summary,
+    summaryError,
+  };
+  syncOrchestrationResult(result);
+  renderOrchestrationProgress(result);
+  renderOrchestrationResults(result);
+  renderOrchestrationBadge();
+  return result;
+}
+
 async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
   const cleanGoal = String(goal ?? "").trim();
   if (!cleanGoal) return { goal: cleanGoal, plan: [], results: [], tasks: [] };
 
   showToast("오케스트레이션 분배를 시작합니다.");
-  const createdTasks = [];
-  const registered = new Set();
+  const plan = await planTasks(cleanGoal, state.employees);
 
-  const orchestration = await runOrchestration(cleanGoal, state.employees, {
-    onUpdate: (event) => {
-      if (event.phase === "start") {
-        setEmployeeForTask(event.employee.id, event.employee.currentTaskId ?? null, "working");
-        saveState();
-        render();
-        showToast(`${event.employee.name}: 세부 업무 처리 중…`);
-      }
-
-      const eventKey = event.key ?? event.employee.id;
-      if ((event.phase === "done" || event.phase === "error") && !registered.has(eventKey)) {
-        const task = createOrchestrationTask(event.employee.id, event.subtask);
-        if (task) createdTasks.push(task);
-        registered.add(eventKey);
-      }
-
-      onUpdate?.(event);
-    },
+  plan.forEach((item, index) => {
+    const employee = getEmployee(item.employeeId);
+    if (!employee) return;
+    onUpdate?.({
+      phase: item.needsReview ? "review" : "queued",
+      key: `${item.employeeId}#${index}`,
+      employee,
+      subtask: item.subtask,
+      needsReview: Boolean(item.needsReview),
+    });
   });
 
-  showToast(`오케스트레이션 업무 ${createdTasks.length}개를 할 일판에 등록했습니다.`);
-  return { ...orchestration, tasks: createdTasks };
+  const runnableItems = (state.orch.items ?? []).filter((item) => !item.isSummary && item.status === "queued");
+  for (const item of runnableItems) {
+    await executeOrchestrationItem(item, { onUpdate });
+  }
+
+  const result = await finishOrchestrationIfReady({ onUpdate });
+  const reviewCount = (state.orch.items ?? []).filter((item) => !item.isSummary && item.status === "review").length;
+  if (reviewCount) {
+    showToast(`검토 필요 업무 ${reviewCount}개가 대기 중입니다.`);
+  } else {
+    showToast(`오케스트레이션 업무 ${(result.tasks ?? []).length}개를 할 일판에 등록했습니다.`);
+  }
+  return { ...result, plan };
 }
 
 function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = [] }) {
