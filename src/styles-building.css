@@ -6191,6 +6191,9 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .orch-summary-card p {
+  max-height: 190px;
+  padding-right: 4px;
+  overflow: auto;
   margin: 0;
   color: rgba(47, 31, 16, 0.80);
   font-size: 13px;
@@ -6281,6 +6284,13 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .orch-empty {
   color: rgba(47, 31, 16, 0.74);
   font-size: 13px;
+}
+
+.orch-result-answer {
+  max-height: 180px;
+  padding-right: 4px;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 768px) {

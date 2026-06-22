@@ -261,6 +261,7 @@ async function summarizeOrchestration(goal, results, employees) {
     "너는 HA:YEON AI STUDIO의 관제 매니저다.",
     "직원별 산출물을 종합해 전체 요약, 빠진 부분, 다음 액션 체크리스트를 간결하게 정리한다.",
     "한국어로 작성하고, 실제 실행에 바로 쓸 수 있는 항목 중심으로 답한다.",
+    "전체 10줄 이내로 제한하고, 불릿 중심으로 작성한다.",
   ].join("\n");
 
   const res = await fetch("/api/agent", {
