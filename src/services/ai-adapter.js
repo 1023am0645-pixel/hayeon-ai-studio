@@ -166,7 +166,7 @@ async function planTasks(goal, employees) {
 
 async function runOrchestration(goal, employees, { onUpdate } = {}) {
   const cleanGoal = String(goal ?? "").trim();
-  if (!cleanGoal) return { goal: cleanGoal, plan: [], results: [] };
+  if (!cleanGoal) return { goal: cleanGoal, plan: [], results: [], summary: "" };
 
   const plan = await planTasks(cleanGoal, employees);
   const results = [];
@@ -203,7 +203,79 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
     }
   }
 
-  return { goal: cleanGoal, plan, results };
+  const summaryEmployee =
+    employees.find((employee) => employee.id === "control-bot")
+    ?? employees.find((employee) => employee.id === "chief-assistant")
+    ?? employees[0];
+  let summary = "";
+  let summaryError = "";
+
+  if (results.length && summaryEmployee) {
+    onUpdate?.({
+      phase: "summary-start",
+      employee: summaryEmployee,
+      subtask: "직원별 산출물 종합 요약",
+    });
+
+    try {
+      summary = await summarizeOrchestration(cleanGoal, results, employees);
+      onUpdate?.({
+        phase: "summary-done",
+        employee: summaryEmployee,
+        subtask: "직원별 산출물 종합 요약",
+        text: summary,
+      });
+    } catch (err) {
+      summaryError = err && err.message ? err.message : String(err);
+      onUpdate?.({
+        phase: "summary-error",
+        employee: summaryEmployee,
+        subtask: "직원별 산출물 종합 요약",
+        error: summaryError,
+      });
+    }
+  }
+
+  return { goal: cleanGoal, plan, results, summary, summaryError };
+}
+
+async function summarizeOrchestration(goal, results, employees) {
+  const cleanGoal = String(goal ?? "").trim();
+  const summaryEmployee =
+    employees.find((employee) => employee.id === "control-bot")
+    ?? employees.find((employee) => employee.id === "chief-assistant")
+    ?? employees[0];
+  if (!cleanGoal || !results.length || !summaryEmployee) return "";
+
+  const body = results.map((result) => {
+    const answer = result.text || `(처리 실패) ${result.error ?? ""}`;
+    return [
+      `## ${result.employeeName} (${result.role})`,
+      `지시: ${result.subtask}`,
+      "결과:",
+      answer,
+    ].join("\n");
+  }).join("\n\n");
+
+  const system = [
+    "너는 HA:YEON AI STUDIO의 관제 매니저다.",
+    "직원별 산출물을 종합해 전체 요약, 빠진 부분, 다음 액션 체크리스트를 간결하게 정리한다.",
+    "한국어로 작성하고, 실제 실행에 바로 쓸 수 있는 항목 중심으로 답한다.",
+  ].join("\n");
+
+  const res = await fetch("/api/agent", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      system: summaryEmployee.prompt?.system ? `${summaryEmployee.prompt.system}\n\n${system}` : system,
+      user: `목표: ${cleanGoal}\n\n${body}`,
+    }),
+  });
+  if (!res.ok) throw new Error("summary api " + res.status);
+
+  const data = await res.json();
+  if (!data.text) throw new Error(data.error || "empty summary response");
+  return data.text.trim();
 }
 
 window.HayeonAiAdapter = {
@@ -216,5 +288,6 @@ window.HayeonAiAdapter = {
   ruleBasedPlan,
   planTasks,
   runOrchestration,
+  summarizeOrchestration,
 };
 })();

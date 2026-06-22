@@ -6141,6 +6141,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .orch-result-summary,
+.orch-summary-card,
 .orch-result-card {
   padding: 13px 14px;
   background: rgba(255, 255, 255, 0.72);
@@ -6161,6 +6162,40 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   color: rgba(64, 41, 21, 0.66);
   font-size: 13px;
   font-weight: 700;
+}
+
+.orch-summary-card {
+  display: grid;
+  gap: 8px;
+  background:
+    linear-gradient(140deg, rgba(255, 248, 229, 0.90), rgba(245, 224, 185, 0.76)),
+    rgba(255, 255, 255, 0.78);
+  border-color: rgba(196, 139, 56, 0.28);
+}
+
+.orch-summary-card.has-error {
+  background: rgba(255, 244, 240, 0.84);
+  border-color: rgba(196, 91, 72, 0.32);
+}
+
+.orch-summary-card span {
+  width: fit-content;
+  padding: 4px 8px;
+  color: #7a4f17;
+  background: rgba(255, 238, 192, 0.74);
+  border: 1px solid rgba(196, 139, 56, 0.24);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.orch-summary-card p {
+  margin: 0;
+  color: rgba(47, 31, 16, 0.80);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .orch-result-card {

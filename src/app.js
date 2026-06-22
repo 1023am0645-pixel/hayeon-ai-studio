@@ -414,9 +414,18 @@ function renderOrchestrationProgress(result = null) {
   const activeCount = orchestrationUi.events.filter((item) => item.phase === "start").length - doneCount - errorCount;
   const latestEvents = orchestrationUi.events.slice(-5).map((item) => {
     const employeeName = item.employee?.name ?? "직원";
-    const phaseLabel = item.phase === "start" ? "처리 중" : item.phase === "done" ? "완료" : "오류";
+    const phaseLabels = {
+      start: "처리 중",
+      done: "완료",
+      error: "오류",
+      "summary-start": "요약 중",
+      "summary-done": "요약 완료",
+      "summary-error": "요약 오류",
+    };
+    const phaseLabel = phaseLabels[item.phase] ?? "진행";
+    const phaseClass = String(item.phase).replace(/[^a-z0-9-]/gi, "-");
     return `
-      <li class="orch-progress-item is-${escapeHtml(item.phase)}">
+      <li class="orch-progress-item is-${escapeHtml(phaseClass)}">
         <span>${escapeHtml(phaseLabel)}</span>
         <strong>${escapeHtml(employeeName)}</strong>
         <em>${escapeHtml(item.subtask ?? "")}</em>
@@ -441,6 +450,21 @@ function renderOrchestrationProgress(result = null) {
 }
 
 function renderOrchestrationResults(result) {
+  const summaryBlock = result.summary
+    ? `
+      <section class="orch-summary-card">
+        <span>관제봇 종합요약</span>
+        <p>${escapeHtml(result.summary)}</p>
+      </section>
+    `
+    : result.summaryError
+      ? `
+        <section class="orch-summary-card has-error">
+          <span>관제봇 요약 오류</span>
+          <p>${escapeHtml(result.summaryError)}</p>
+        </section>
+      `
+      : "";
   const rows = result.results.map((item) => {
     const employee = getEmployee(item.employeeId);
     const isError = Boolean(item.error);
@@ -466,6 +490,7 @@ function renderOrchestrationResults(result) {
       <strong>${escapeHtml(result.goal)}</strong>
       <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록</span>
     </div>
+    ${summaryBlock}
     ${rows || "<p class=\"orch-empty\">선정된 직원이 없습니다.</p>"}
   `;
 }
