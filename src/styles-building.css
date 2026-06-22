@@ -6469,3 +6469,87 @@ body.v2-active .bottom-info-strip.bottom-info-caption > strong {
 body.v2-active .bottom-info-strip.bottom-info-caption .office-census {
   color: #ffe6a6 !important;
 }
+
+/* ================================================================
+   PASS 22 — building fullscreen view
+   ================================================================ */
+.fullscreen-nav-button[aria-pressed="true"] {
+  background: rgba(202, 161, 90, 0.30) !important;
+  border-color: rgba(255, 230, 166, 0.42) !important;
+}
+
+body.building-view-active .building-shell:fullscreen {
+  display: grid !important;
+  place-items: center !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: none !important;
+  padding: 18px !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 236, 194, 0.22), transparent 28%),
+    linear-gradient(135deg, #f7eedc 0%, #e7d4b8 48%, #cdb18a 100%) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body.building-view-active .building-shell:fullscreen .building-live-board,
+body.building-view-active .building-shell:fullscreen .bottom-info-strip {
+  display: none !important;
+}
+
+body.building-view-active .building-shell:fullscreen .building-stage {
+  width: min(calc(100vw - 36px), calc((100vh - 36px) * 1376 / 768)) !important;
+  max-width: calc(100vw - 36px) !important;
+  max-height: calc(100vh - 36px) !important;
+  aspect-ratio: 1376 / 768 !important;
+  margin: auto !important;
+  border-radius: 18px !important;
+}
+
+body.is-app-expanded {
+  overflow: hidden !important;
+}
+
+body.is-app-expanded .building-shell {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000 !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  padding: 18px !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 236, 194, 0.22), transparent 28%),
+    linear-gradient(135deg, #f7eedc 0%, #e7d4b8 48%, #cdb18a 100%) !important;
+}
+
+body.is-app-expanded .building-live-board,
+body.is-app-expanded .bottom-info-strip {
+  display: none !important;
+}
+
+body.is-app-expanded .building-stage {
+  width: min(calc(100vw - 36px), calc((100vh - 36px) * 1376 / 768)) !important;
+  max-width: calc(100vw - 36px) !important;
+  max-height: calc(100vh - 36px) !important;
+  aspect-ratio: 1376 / 768 !important;
+  margin: auto !important;
+  border-radius: 18px !important;
+}
+
+body.is-app-expanded.floor-detail-active .workspace-stage {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000 !important;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100vh !important;
+  padding: 18px !important;
+  overflow: auto !important;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 236, 194, 0.22), transparent 28%),
+    linear-gradient(135deg, #f7eedc 0%, #e7d4b8 48%, #cdb18a 100%) !important;
+}

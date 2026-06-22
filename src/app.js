@@ -27,6 +27,7 @@ const refs = {
   toggleTaskFormButton: $("#toggleTaskFormButton"),
   openTaskBoardButton: $("#openTaskBoardButton"),
   closeTaskBoardButton: $("#closeTaskBoardButton"),
+  fullscreenButton: $("#fullscreenButton"),
   openOrchestrationButton: $("#openOrchestrationButton"),
   orchestrationBackdrop: $("#orchestrationBackdrop"),
   orchestrationPanel: $("#orchestrationPanel"),
@@ -292,6 +293,9 @@ function bindEvents() {
     openTaskDrawer();
   });
 
+  refs.fullscreenButton.addEventListener("click", toggleFullscreenView);
+  document.addEventListener("fullscreenchange", updateFullscreenButton);
+
   refs.openOrchestrationButton.addEventListener("click", () => {
     openOrchestrationPanel();
   });
@@ -353,6 +357,51 @@ function closeTaskDrawer() {
   refs.taskDrawer.classList.add("is-hidden");
   refs.taskDrawerBackdrop.classList.add("is-hidden");
   refs.taskDrawer.setAttribute("aria-hidden", "true");
+}
+
+async function toggleFullscreenView() {
+  const isCssExpanded = document.body.classList.contains("is-app-expanded");
+
+  if (document.fullscreenElement) {
+    await document.exitFullscreen?.();
+    document.body.classList.remove("is-app-expanded");
+    updateFullscreenButton();
+    return;
+  }
+
+  if (isCssExpanded) {
+    document.body.classList.remove("is-app-expanded");
+    updateFullscreenButton();
+    return;
+  }
+
+  const target = getFullscreenTarget();
+  try {
+    if (target?.requestFullscreen) {
+      await target.requestFullscreen();
+    } else {
+      document.body.classList.add("is-app-expanded");
+    }
+  } catch (err) {
+    console.warn("fullscreen fallback:", err);
+    document.body.classList.add("is-app-expanded");
+  }
+  updateFullscreenButton();
+}
+
+function getFullscreenTarget() {
+  const buildingShell = refs.buildingView?.querySelector(".building-shell");
+  if (state.currentView === "building" && buildingShell) return buildingShell;
+  return refs.workspace
+    ?? document.documentElement;
+}
+
+function updateFullscreenButton() {
+  const isExpanded = Boolean(document.fullscreenElement) || document.body.classList.contains("is-app-expanded");
+  refs.fullscreenButton.textContent = isExpanded ? "↙" : "⛶";
+  refs.fullscreenButton.setAttribute("aria-label", isExpanded ? "전체화면 닫기" : "전체화면");
+  refs.fullscreenButton.setAttribute("title", isExpanded ? "전체화면 닫기" : "전체화면");
+  refs.fullscreenButton.setAttribute("aria-pressed", String(isExpanded));
 }
 
 function openOrchestrationPanel() {
