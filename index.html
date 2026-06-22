@@ -157,6 +157,14 @@
       </div>
 
       <div class="orchestration-results" id="orchestrationResults"></div>
+
+      <section class="orch-detail-card is-hidden" id="orchestrationDetail" aria-live="polite">
+        <div class="orch-detail-header">
+          <strong>업무 상세</strong>
+          <button class="detail-close" id="closeOrchestrationDetailButton" type="button" aria-label="업무 상세 닫기">×</button>
+        </div>
+        <div class="orch-detail-content" id="orchestrationDetailContent"></div>
+      </section>
     </section>
 
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
