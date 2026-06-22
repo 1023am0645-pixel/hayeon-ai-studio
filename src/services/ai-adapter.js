@@ -87,23 +87,63 @@ function buildPlanningSystemPrompt(employees) {
 }
 
 function parsePlanJson(text, employees) {
-  const match = String(text ?? "").match(/\[[\s\S]*\]/);
-  if (!match) return [];
+  try {
+    const match = String(text ?? "").match(/\[[\s\S]*\]/);
+    if (!match) return [];
 
-  const parsed = JSON.parse(match[0]);
-  if (!Array.isArray(parsed)) return [];
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) return [];
 
-  return parsed
-    .filter((item) => {
-      return item
-        && employees.some((employee) => employee.id === item.employeeId)
-        && typeof item.subtask === "string"
-        && item.subtask.trim();
-    })
-    .map((item) => ({
-      employeeId: item.employeeId,
-      subtask: item.subtask.trim(),
-    }));
+    return parsed
+      .filter((item) => {
+        return item
+          && employees.some((employee) => employee.id === item.employeeId)
+          && typeof item.subtask === "string"
+          && item.subtask.trim();
+      })
+      .map((item) => ({
+        employeeId: item.employeeId,
+        subtask: item.subtask.trim(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function ruleBasedPlan(goal, employees) {
+  const cleanGoal = String(goal ?? "").trim();
+  const normalizedGoal = cleanGoal.toLowerCase();
+  const hasEmployee = (id) => employees.some((employee) => employee.id === id);
+  const rules = [
+    [["강의", "교육", "수업", "특강", "입문"], "lecture-pd", "강의 흐름/설계안 작성"],
+    [["교안", "자료", "원고"], "prompt-engineer", "교안·교육자료 초안 작성"],
+    [["ppt", "슬라이드", "발표자료"], "ppt-designer", "슬라이드 구성/문구 정리"],
+    [["실습", "사례", "예시"], "case-developer", "실습 사례/예시 설계"],
+    [["오프닝", "도입", "첫인사"], "opening-writer", "오프닝·도입 멘트 작성"],
+    [["리허설", "시간", "발표연습"], "rehearsal-coach", "리허설·시간배분 점검"],
+    [["현장", "준비물", "장비", "체크"], "field-manager", "현장 준비 체크리스트"],
+    [["일정", "마감", "스케줄"], "schedule-bot", "일정·마감일 정리"],
+    [["ax", "서포터즈", "과제"], "ax-pm", "AX 과제 정리/관리"],
+    [["보고", "보고서"], "report-writer", "보고서 초안 작성"],
+    [["후기", "피드백", "만족도"], "feedback-analyst", "후기/피드백 분석"],
+    [["기록", "아카이브"], "archive-curator", "기록 정리"],
+    [["앱", "화면", "ux"], "app-planner", "앱 기획/화면 정리"],
+    [["자동화", "반복", "템플릿"], "automation-bot", "자동화 흐름 설계"],
+  ];
+
+  const picked = [];
+  rules.forEach(([keywords, employeeId, subtask]) => {
+    const alreadyPicked = picked.some((item) => item.employeeId === employeeId);
+    if (!alreadyPicked && hasEmployee(employeeId) && keywords.some((keyword) => normalizedGoal.includes(keyword))) {
+      picked.push({ employeeId, subtask: `${cleanGoal} — ${subtask}` });
+    }
+  });
+
+  if (!picked.length && hasEmployee("chief-assistant")) {
+    picked.push({ employeeId: "chief-assistant", subtask: cleanGoal });
+  }
+
+  return picked;
 }
 
 async function planTasks(goal, employees) {
@@ -120,7 +160,8 @@ async function planTasks(goal, employees) {
 
   const data = await res.json();
   if (!data.text) throw new Error(data.error || "empty planner response");
-  return parsePlanJson(data.text, employees);
+  const parsedPlan = parsePlanJson(data.text, employees);
+  return parsedPlan.length ? parsedPlan : ruleBasedPlan(cleanGoal, employees);
 }
 
 window.HayeonAiAdapter = {
@@ -130,6 +171,7 @@ window.HayeonAiAdapter = {
   requestEmployeeReply,
   buildPlanningSystemPrompt,
   parsePlanJson,
+  ruleBasedPlan,
   planTasks,
 };
 })();
