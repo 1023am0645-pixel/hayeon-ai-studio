@@ -59,10 +59,77 @@ async function requestEmployeeReply(employee, taskText) {
   return data.text;
 }
 
+function buildPlanningSystemPrompt(employees) {
+  const roster = employees.map((employee) => {
+    return `- ${employee.id} | ${employee.name} | ${employee.role}`;
+  }).join("\n");
+
+  return [
+    "너는 'HA:YEON AI STUDIO'의 총괄 매니저다.",
+    "주어진 목표를 달성하기 위해, 아래 직원 명단에서 '꼭 필요한 직원만' 선정하고",
+    "각 직원에게 그 사람의 역할에 맞는 '구체적이고 실행 가능한 세부지시'를 만든다.",
+    "규칙:",
+    "1) 반드시 JSON 배열만 출력. 설명/머리말 금지.",
+    "2) 형식: [{\"employeeId\":\"<id>\",\"subtask\":\"<한국어 세부지시>\"}]",
+    "3) employeeId는 반드시 명단의 id와 정확히 일치.",
+    "4) 목표와 무관한 직원은 절대 넣지 마라. 보통 3~6명.",
+    "",
+    "[직원 명단]",
+    roster,
+    "",
+    "[예시] 목표: \"다음달 신입 입문교육 준비\"",
+    "[{\"employeeId\":\"lecture-pd\",\"subtask\":\"신입 대상 90분 입문교육 강의 흐름안(도입·본론·실습·마무리) 작성\"},",
+    " {\"employeeId\":\"prompt-engineer\",\"subtask\":\"입문교육 핵심 개념 교안 초안 작성\"},",
+    " {\"employeeId\":\"ppt-designer\",\"subtask\":\"교안 기반 슬라이드 구성/제목 문구 정리\"},",
+    " {\"employeeId\":\"case-developer\",\"subtask\":\"신입이 따라할 실습 예시 3개 설계\"},",
+    " {\"employeeId\":\"schedule-bot\",\"subtask\":\"교육 일정·준비 마감일 정리\"}]",
+  ].join("\n");
+}
+
+function parsePlanJson(text, employees) {
+  const match = String(text ?? "").match(/\[[\s\S]*\]/);
+  if (!match) return [];
+
+  const parsed = JSON.parse(match[0]);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((item) => {
+      return item
+        && employees.some((employee) => employee.id === item.employeeId)
+        && typeof item.subtask === "string"
+        && item.subtask.trim();
+    })
+    .map((item) => ({
+      employeeId: item.employeeId,
+      subtask: item.subtask.trim(),
+    }));
+}
+
+async function planTasks(goal, employees) {
+  const cleanGoal = String(goal ?? "").trim();
+  if (!cleanGoal) return [];
+
+  const system = buildPlanningSystemPrompt(employees);
+  const res = await fetch("/api/agent", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ system, user: cleanGoal }),
+  });
+  if (!res.ok) throw new Error("planner api " + res.status);
+
+  const data = await res.json();
+  if (!data.text) throw new Error(data.error || "empty planner response");
+  return parsePlanJson(data.text, employees);
+}
+
 window.HayeonAiAdapter = {
   aiProviderSlots,
   buildEmployeePrompt,
   createSimulatedReply,
   requestEmployeeReply,
+  buildPlanningSystemPrompt,
+  parsePlanJson,
+  planTasks,
 };
 })();
