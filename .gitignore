@@ -1,3 +1,16 @@
 .DS_Store
 .dev.vars
 node_modules/
+
+# Local upload/build/reference folders
+_deploy/
+_UPLOAD/
+_style-previews/
+docs/
+
+# Local docs and alternate deploy artifacts
+functions/
+README.md
+AI_AGENT_연결_가이드.md
+HAYEON_AI_STUDIO_staff_character_guide_v2.docx
+배포_따라하기.md
