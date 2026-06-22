@@ -18,7 +18,7 @@ export async function onRequestPost({ request, env }) {
   if (!env.AI) return json({ error: "AI binding 'AI' is not enabled" }, 500);
 
   try {
-    const r = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+    const r = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
       messages: [
         ...(system ? [{ role: "system", content: system }] : []),
         { role: "user", content: user },
