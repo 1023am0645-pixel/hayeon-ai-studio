@@ -27,6 +27,14 @@ const refs = {
   toggleTaskFormButton: $("#toggleTaskFormButton"),
   openTaskBoardButton: $("#openTaskBoardButton"),
   closeTaskBoardButton: $("#closeTaskBoardButton"),
+  openOrchestrationButton: $("#openOrchestrationButton"),
+  orchestrationBackdrop: $("#orchestrationBackdrop"),
+  orchestrationPanel: $("#orchestrationPanel"),
+  closeOrchestrationButton: $("#closeOrchestrationButton"),
+  orchestrationForm: $("#orchestrationForm"),
+  orchestrationGoal: $("#orchestrationGoal"),
+  orchestrationProgress: $("#orchestrationProgress"),
+  orchestrationResults: $("#orchestrationResults"),
   taskPillCount: $("#taskPillCount"),
   resetDataButton: $("#resetDataButton"),
   toastStack: $("#toastStack"),
@@ -49,6 +57,10 @@ let state = loadState();
 let bubbleTick = 0;
 const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
+const orchestrationUi = {
+  isRunning: false,
+  events: [],
+};
 
 boot();
 
@@ -277,6 +289,10 @@ function bindEvents() {
     openTaskDrawer();
   });
 
+  refs.openOrchestrationButton.addEventListener("click", () => {
+    openOrchestrationPanel();
+  });
+
   refs.backToBuildingButton.addEventListener("click", () => {
     openBuildingView();
   });
@@ -288,6 +304,16 @@ function bindEvents() {
   refs.taskDrawerBackdrop.addEventListener("click", () => {
     closeTaskDrawer();
   });
+
+  refs.closeOrchestrationButton.addEventListener("click", () => {
+    closeOrchestrationPanel();
+  });
+
+  refs.orchestrationBackdrop.addEventListener("click", () => {
+    closeOrchestrationPanel();
+  });
+
+  refs.orchestrationForm.addEventListener("submit", handleOrchestrationSubmit);
 
   refs.resetDataButton.addEventListener("click", () => {
     const ok = window.confirm("샘플 데이터로 초기화할까요? 지금까지 만든 업무는 지워집니다.");
@@ -319,6 +345,129 @@ function closeTaskDrawer() {
   refs.taskDrawer.classList.add("is-hidden");
   refs.taskDrawerBackdrop.classList.add("is-hidden");
   refs.taskDrawer.setAttribute("aria-hidden", "true");
+}
+
+function openOrchestrationPanel() {
+  refs.orchestrationBackdrop.classList.remove("is-hidden");
+  refs.orchestrationPanel.classList.remove("is-hidden");
+  refs.orchestrationPanel.setAttribute("aria-hidden", "false");
+  if (!orchestrationUi.events.length) {
+    refs.orchestrationProgress.textContent =
+      "목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.";
+    refs.orchestrationResults.innerHTML = "";
+  }
+  refs.orchestrationGoal.focus();
+}
+
+function closeOrchestrationPanel() {
+  if (orchestrationUi.isRunning) {
+    showToast("오케스트레이션 실행 중입니다. 완료 후 닫을 수 있습니다.");
+    return;
+  }
+  refs.orchestrationPanel.classList.add("is-hidden");
+  refs.orchestrationBackdrop.classList.add("is-hidden");
+  refs.orchestrationPanel.setAttribute("aria-hidden", "true");
+}
+
+async function handleOrchestrationSubmit(event) {
+  event.preventDefault();
+  if (orchestrationUi.isRunning) return;
+
+  const goal = String(new FormData(event.target).get("goal") ?? "").trim();
+  if (!goal) return;
+
+  orchestrationUi.isRunning = true;
+  orchestrationUi.events = [];
+  refs.orchestrationResults.innerHTML = "";
+  renderOrchestrationProgress();
+
+  const submitButton = refs.orchestrationForm.querySelector("button[type='submit']");
+  submitButton.disabled = true;
+  refs.orchestrationGoal.disabled = true;
+
+  try {
+    const result = await runOrchestrationToBoard(goal, {
+      onUpdate: (update) => {
+        orchestrationUi.events.push(update);
+        renderOrchestrationProgress();
+      },
+    });
+    renderOrchestrationProgress(result);
+    renderOrchestrationResults(result);
+  } catch (err) {
+    console.error("orchestration error:", err);
+    const message = err && err.message ? err.message : String(err);
+    refs.orchestrationProgress.innerHTML = `
+      <strong>실행 실패</strong>
+      <span>${escapeHtml(message)}</span>
+    `;
+  } finally {
+    orchestrationUi.isRunning = false;
+    submitButton.disabled = false;
+    refs.orchestrationGoal.disabled = false;
+  }
+}
+
+function renderOrchestrationProgress(result = null) {
+  const doneCount = orchestrationUi.events.filter((item) => item.phase === "done").length;
+  const errorCount = orchestrationUi.events.filter((item) => item.phase === "error").length;
+  const activeCount = orchestrationUi.events.filter((item) => item.phase === "start").length - doneCount - errorCount;
+  const latestEvents = orchestrationUi.events.slice(-5).map((item) => {
+    const employeeName = item.employee?.name ?? "직원";
+    const phaseLabel = item.phase === "start" ? "처리 중" : item.phase === "done" ? "완료" : "오류";
+    return `
+      <li class="orch-progress-item is-${escapeHtml(item.phase)}">
+        <span>${escapeHtml(phaseLabel)}</span>
+        <strong>${escapeHtml(employeeName)}</strong>
+        <em>${escapeHtml(item.subtask ?? "")}</em>
+      </li>
+    `;
+  }).join("");
+
+  if (result) {
+    refs.orchestrationProgress.innerHTML = `
+      <strong>분배 완료</strong>
+      <span>${result.tasks.length}개 업무가 할 일판에 등록되었습니다.</span>
+      ${latestEvents ? `<ul>${latestEvents}</ul>` : ""}
+    `;
+    return;
+  }
+
+  refs.orchestrationProgress.innerHTML = `
+    <strong>분배 진행 중</strong>
+    <span>완료 ${doneCount}명 · 처리 중 ${Math.max(activeCount, 0)}명 · 오류 ${errorCount}명</span>
+    ${latestEvents ? `<ul>${latestEvents}</ul>` : "<p>매니저가 필요한 직원을 선정하고 있습니다.</p>"}
+  `;
+}
+
+function renderOrchestrationResults(result) {
+  const rows = result.results.map((item) => {
+    const employee = getEmployee(item.employeeId);
+    const isError = Boolean(item.error);
+    return `
+      <article class="orch-result-card ${isError ? "has-error" : ""}">
+        <div class="orch-result-head">
+          <span class="orch-result-avatar" aria-hidden="true">
+            ${employee ? renderAvatarVisual(employee) : ""}
+          </span>
+          <div>
+            <strong>${escapeHtml(item.employeeName)}</strong>
+            <span>${escapeHtml(item.role)}</span>
+          </div>
+        </div>
+        <p class="orch-result-task">${escapeHtml(item.subtask)}</p>
+        <p class="orch-result-answer">${escapeHtml(isError ? item.error : item.text)}</p>
+      </article>
+    `;
+  }).join("");
+
+  refs.orchestrationResults.innerHTML = `
+    <div class="orch-result-summary">
+      <strong>${escapeHtml(result.goal)}</strong>
+      <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록</span>
+    </div>
+    ${rows || "<p class=\"orch-empty\">선정된 직원이 없습니다.</p>"}
+  `;
 }
 
 function openFloorDetail(floorId) {

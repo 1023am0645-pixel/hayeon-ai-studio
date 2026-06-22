@@ -37,6 +37,9 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button class="nav-button orchestration-nav-button compact-icon-button" id="openOrchestrationButton" type="button" aria-label="전 직원에게 지시" title="전 직원에게 지시">
+            <span aria-hidden="true">🧭</span>
+          </button>
           <button class="nav-button task-nav-button compact-icon-button" id="openTaskBoardButton" type="button" aria-label="할 일판 열기" title="할 일판">
             <span aria-hidden="true">📋</span>
             <strong id="taskPillCount">0</strong>
@@ -130,6 +133,31 @@
       </form>
       <div class="kanban-board" id="kanbanBoard"></div>
     </aside>
+
+    <div class="orchestration-backdrop is-hidden" id="orchestrationBackdrop"></div>
+    <section class="orchestration-panel is-hidden" id="orchestrationPanel" aria-labelledby="orchestrationTitle" aria-hidden="true">
+      <div class="orchestration-header">
+        <div>
+          <p class="eyebrow">ORCHESTRATION</p>
+          <h2 id="orchestrationTitle">전 직원에게 지시</h2>
+        </div>
+        <button class="detail-close" id="closeOrchestrationButton" type="button" aria-label="오케스트레이션 닫기">×</button>
+      </div>
+
+      <form class="orchestration-form" id="orchestrationForm">
+        <label>
+          목표
+          <textarea name="goal" id="orchestrationGoal" rows="3" placeholder="예: 다음달 신입 입문교육 준비해줘" required></textarea>
+        </label>
+        <button class="primary-button full-width" type="submit">분배 실행</button>
+      </form>
+
+      <div class="orchestration-progress" id="orchestrationProgress" aria-live="polite">
+        목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.
+      </div>
+
+      <div class="orchestration-results" id="orchestrationResults"></div>
+    </section>
 
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
 
