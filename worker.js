@@ -22,7 +22,7 @@ async function handleAgent(request, env) {
   if (!user || user.length > 2000) return json({ error: "bad input" }, 400);
   if (!env.AI) return json({ error: "AI binding 'AI' missing" }, 500);
   try {
-    const r = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+    const r = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
       messages: [
         ...(system ? [{ role: "system", content: system }] : []),
         { role: "user", content: user },
