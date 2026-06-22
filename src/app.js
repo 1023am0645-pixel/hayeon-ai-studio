@@ -10,7 +10,7 @@ const {
   tasks: seedTasks,
 } = window.HayeonOfficeData;
 
-const { createSimulatedReply } = window.HayeonAiAdapter;
+const { createSimulatedReply, runOrchestration } = window.HayeonAiAdapter;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -70,6 +70,9 @@ function boot() {
   }, 7_000);
   window.HayeonAvatarLoadFailed = (src) => {
     if (src) failedAvatarSrcs.add(src);
+  };
+  window.HayeonOrchestration = {
+    runToBoard: runOrchestrationToBoard,
   };
 }
 
@@ -1383,6 +1386,51 @@ function createBoardTask(formData) {
   saveState();
   render();
   showToast("새 업무를 할 일판에 추가했습니다.");
+}
+
+function makeOrchestrationTaskForm(title) {
+  const formData = new FormData();
+  formData.set("title", title);
+  formData.set("priority", "medium");
+  formData.set("tags", "#오케스트레이션");
+  return formData;
+}
+
+function createOrchestrationTask(employeeId, title) {
+  const beforeCount = state.tasks.length;
+  createDirectedTask(employeeId, makeOrchestrationTaskForm(title));
+  return state.tasks.length > beforeCount ? state.tasks[0] : null;
+}
+
+async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
+  const cleanGoal = String(goal ?? "").trim();
+  if (!cleanGoal) return { goal: cleanGoal, plan: [], results: [], tasks: [] };
+
+  showToast("오케스트레이션 분배를 시작합니다.");
+  const createdTasks = [];
+  const registered = new Set();
+
+  const orchestration = await runOrchestration(cleanGoal, state.employees, {
+    onUpdate: (event) => {
+      if (event.phase === "start") {
+        setEmployeeForTask(event.employee.id, event.employee.currentTaskId ?? null, "working");
+        saveState();
+        render();
+        showToast(`${event.employee.name}: 세부 업무 처리 중…`);
+      }
+
+      if ((event.phase === "done" || event.phase === "error") && !registered.has(event.employee.id)) {
+        const task = createOrchestrationTask(event.employee.id, event.subtask);
+        if (task) createdTasks.push(task);
+        registered.add(event.employee.id);
+      }
+
+      onUpdate?.(event);
+    },
+  });
+
+  showToast(`오케스트레이션 업무 ${createdTasks.length}개를 할 일판에 등록했습니다.`);
+  return { ...orchestration, tasks: createdTasks };
 }
 
 function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = [] }) {
