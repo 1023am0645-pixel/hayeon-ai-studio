@@ -59,7 +59,7 @@ const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
 const orchestrationUi = {
   isRunning: false,
-  events: [],
+  items: [],
 };
 
 boot();
@@ -351,7 +351,7 @@ function openOrchestrationPanel() {
   refs.orchestrationBackdrop.classList.remove("is-hidden");
   refs.orchestrationPanel.classList.remove("is-hidden");
   refs.orchestrationPanel.setAttribute("aria-hidden", "false");
-  if (!orchestrationUi.events.length) {
+  if (!orchestrationUi.items.length) {
     refs.orchestrationProgress.textContent =
       "목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.";
     refs.orchestrationResults.innerHTML = "";
@@ -377,7 +377,7 @@ async function handleOrchestrationSubmit(event) {
   if (!goal) return;
 
   orchestrationUi.isRunning = true;
-  orchestrationUi.events = [];
+  orchestrationUi.items = [];
   refs.orchestrationResults.innerHTML = "";
   renderOrchestrationProgress();
 
@@ -388,7 +388,7 @@ async function handleOrchestrationSubmit(event) {
   try {
     const result = await runOrchestrationToBoard(goal, {
       onUpdate: (update) => {
-        orchestrationUi.events.push(update);
+        upsertOrchestrationItem(update);
         renderOrchestrationProgress();
       },
     });
@@ -408,26 +408,62 @@ async function handleOrchestrationSubmit(event) {
   }
 }
 
-function renderOrchestrationProgress(result = null) {
-  const doneCount = orchestrationUi.events.filter((item) => item.phase === "done").length;
-  const errorCount = orchestrationUi.events.filter((item) => item.phase === "error").length;
-  const activeCount = orchestrationUi.events.filter((item) => item.phase === "start").length - doneCount - errorCount;
-  const latestEvents = orchestrationUi.events.slice(-5).map((item) => {
-    const employeeName = item.employee?.name ?? "직원";
-    const phaseLabels = {
-      start: "처리 중",
-      done: "완료",
-      error: "오류",
-      "summary-start": "요약 중",
-      "summary-done": "요약 완료",
-      "summary-error": "요약 오류",
+function upsertOrchestrationItem(update) {
+  const employeeName = update.employee?.name ?? "직원";
+  const key = update.key ?? `${update.employee?.id ?? employeeName}#${update.subtask ?? ""}`;
+  const statusByPhase = {
+    start: "running",
+    done: "done",
+    error: "error",
+    "summary-start": "running",
+    "summary-done": "done",
+    "summary-error": "error",
+  };
+  const nextStatus = statusByPhase[update.phase] ?? "queued";
+  const index = orchestrationUi.items.findIndex((item) => item.key === key);
+  const patch = {
+    key,
+    employeeId: update.employee?.id ?? "",
+    name: employeeName,
+    subtask: update.subtask ?? "",
+    status: nextStatus,
+    phase: update.phase,
+    text: update.text ?? "",
+    error: update.error ?? "",
+    isSummary: key === "summary" || String(update.phase).startsWith("summary-"),
+  };
+
+  if (index >= 0) {
+    orchestrationUi.items[index] = {
+      ...orchestrationUi.items[index],
+      ...patch,
+      text: patch.text || orchestrationUi.items[index].text,
+      error: patch.error || orchestrationUi.items[index].error,
     };
-    const phaseLabel = phaseLabels[item.phase] ?? "진행";
-    const phaseClass = String(item.phase).replace(/[^a-z0-9-]/gi, "-");
+    return;
+  }
+
+  orchestrationUi.items.push(patch);
+}
+
+function renderOrchestrationProgress(result = null) {
+  const taskItems = orchestrationUi.items.filter((item) => !item.isSummary);
+  const doneCount = taskItems.filter((item) => item.status === "done").length;
+  const errorCount = taskItems.filter((item) => item.status === "error").length;
+  const activeCount = taskItems.filter((item) => item.status === "running").length;
+  const progressRows = orchestrationUi.items.map((item) => {
+    const statusLabels = {
+      queued: "대기",
+      running: item.isSummary ? "요약 중" : "처리 중",
+      done: item.isSummary ? "요약 완료" : "완료",
+      error: item.isSummary ? "요약 오류" : "오류",
+    };
+    const statusLabel = statusLabels[item.status] ?? "진행";
+    const statusClass = String(item.status).replace(/[^a-z0-9-]/gi, "-");
     return `
-      <li class="orch-progress-item is-${escapeHtml(phaseClass)}">
-        <span>${escapeHtml(phaseLabel)}</span>
-        <strong>${escapeHtml(employeeName)}</strong>
+      <li class="orch-progress-item is-${escapeHtml(statusClass)} ${item.isSummary ? "is-summary" : ""}">
+        <span>${escapeHtml(statusLabel)}</span>
+        <strong>${escapeHtml(item.name)}</strong>
         <em>${escapeHtml(item.subtask ?? "")}</em>
       </li>
     `;
@@ -437,7 +473,7 @@ function renderOrchestrationProgress(result = null) {
     refs.orchestrationProgress.innerHTML = `
       <strong>분배 완료</strong>
       <span>${result.tasks.length}개 업무가 할 일판에 등록되었습니다.</span>
-      ${latestEvents ? `<ul>${latestEvents}</ul>` : ""}
+      ${progressRows ? `<ul>${progressRows}</ul>` : ""}
     `;
     return;
   }
@@ -445,7 +481,7 @@ function renderOrchestrationProgress(result = null) {
   refs.orchestrationProgress.innerHTML = `
     <strong>분배 진행 중</strong>
     <span>완료 ${doneCount}명 · 처리 중 ${Math.max(activeCount, 0)}명 · 오류 ${errorCount}명</span>
-    ${latestEvents ? `<ul>${latestEvents}</ul>` : "<p>매니저가 필요한 직원을 선정하고 있습니다.</p>"}
+    ${progressRows ? `<ul>${progressRows}</ul>` : "<p>매니저가 필요한 직원을 선정하고 있습니다.</p>"}
   `;
 }
 
@@ -1593,10 +1629,11 @@ async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
         showToast(`${event.employee.name}: 세부 업무 처리 중…`);
       }
 
-      if ((event.phase === "done" || event.phase === "error") && !registered.has(event.employee.id)) {
+      const eventKey = event.key ?? event.employee.id;
+      if ((event.phase === "done" || event.phase === "error") && !registered.has(eventKey)) {
         const task = createOrchestrationTask(event.employee.id, event.subtask);
         if (task) createdTasks.push(task);
-        registered.add(event.employee.id);
+        registered.add(eventKey);
       }
 
       onUpdate?.(event);

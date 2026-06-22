@@ -171,15 +171,18 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
   const plan = await planTasks(cleanGoal, employees);
   const results = [];
 
-  for (const item of plan) {
+  for (let index = 0; index < plan.length; index += 1) {
+    const item = plan[index];
+    const itemKey = `${item.employeeId}#${index}`;
     const employee = employees.find((entry) => entry.id === item.employeeId);
     if (!employee) continue;
 
-    onUpdate?.({ phase: "start", employee, subtask: item.subtask });
+    onUpdate?.({ phase: "start", key: itemKey, employee, subtask: item.subtask });
 
     try {
       const text = await requestEmployeeReply(employee, item.subtask);
       const result = {
+        key: itemKey,
         employeeId: employee.id,
         employeeName: employee.name,
         role: employee.role,
@@ -187,10 +190,11 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
         text,
       };
       results.push(result);
-      onUpdate?.({ phase: "done", employee, subtask: item.subtask, text });
+      onUpdate?.({ phase: "done", key: itemKey, employee, subtask: item.subtask, text });
     } catch (err) {
       const error = err && err.message ? err.message : String(err);
       const result = {
+        key: itemKey,
         employeeId: employee.id,
         employeeName: employee.name,
         role: employee.role,
@@ -199,7 +203,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
         error,
       };
       results.push(result);
-      onUpdate?.({ phase: "error", employee, subtask: item.subtask, error });
+      onUpdate?.({ phase: "error", key: itemKey, employee, subtask: item.subtask, error });
     }
   }
 
@@ -213,6 +217,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
   if (results.length && summaryEmployee) {
     onUpdate?.({
       phase: "summary-start",
+      key: "summary",
       employee: summaryEmployee,
       subtask: "직원별 산출물 종합 요약",
     });
@@ -221,6 +226,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
       summary = await summarizeOrchestration(cleanGoal, results, employees);
       onUpdate?.({
         phase: "summary-done",
+        key: "summary",
         employee: summaryEmployee,
         subtask: "직원별 산출물 종합 요약",
         text: summary,
@@ -229,6 +235,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
       summaryError = err && err.message ? err.message : String(err);
       onUpdate?.({
         phase: "summary-error",
+        key: "summary",
         employee: summaryEmployee,
         subtask: "직원별 산출물 종합 요약",
         error: summaryError,
