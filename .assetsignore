@@ -1,0 +1,8 @@
+.git
+.git/**
+node_modules
+_deploy
+_UPLOAD
+_style-previews
+docs
+*.md
