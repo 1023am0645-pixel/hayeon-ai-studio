@@ -711,3 +711,66 @@ html[data-theme] body.v2-active .kanban-board-columns {
     height: 160px;
   }
 }
+
+/* ============================================================
+   Aurora polish (Claude) — 남은 갈색/회색 컴포넌트를 테마 토큰으로 통일
+   ============================================================ */
+/* 업무 카드 */
+html[data-theme] body.v2-active .task-card{
+  background: var(--ui-surface-strong) !important;
+  border: 1px solid var(--ui-line) !important;
+  box-shadow: var(--ui-shadow-soft) !important;
+  color: var(--ui-text) !important;
+}
+html[data-theme] body.v2-active .task-card.priority-high{ border-left: 4px solid var(--ui-accent) !important; }
+html[data-theme] body.v2-active .task-card.priority-medium{ border-left: 4px solid var(--ui-accent-2) !important; }
+html[data-theme] body.v2-active .task-card.priority-low{ border-left: 4px solid var(--ui-line-strong) !important; }
+html[data-theme] body.v2-active .task-card strong{ color: var(--ui-text) !important; }
+html[data-theme] body.v2-active .task-card p,
+html[data-theme] body.v2-active .task-card small,
+html[data-theme] body.v2-active .task-card .task-meta{ color: var(--ui-text-muted) !important; }
+
+/* 미니 버튼 (진행/검토/완료/삭제/문서/수정) */
+html[data-theme] body.v2-active .mini-button{
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line) !important;
+  color: var(--ui-text) !important;
+}
+html[data-theme] body.v2-active .mini-button:hover{ background: var(--ui-surface-strong) !important; }
+html[data-theme] body.v2-active .mini-button.danger{
+  color: #c0392b !important;
+  border-color: rgba(192,57,43,.4) !important;
+  background: rgba(192,57,43,.08) !important;
+}
+
+/* 직원 상세 내부 박스 (소속/현재 업무/최근 완료) */
+html[data-theme] body.v2-active .detail-list div,
+html[data-theme] body.v2-active .inline-panel{
+  background: var(--ui-surface-strong) !important;
+  border: 1px solid var(--ui-line) !important;
+}
+html[data-theme] body.v2-active .detail-list dt{ color: var(--ui-text-muted) !important; }
+html[data-theme] body.v2-active .detail-list dd{ color: var(--ui-text) !important; }
+
+/* 액션 버튼 통일 */
+html[data-theme] body.v2-active .primary-button{
+  background: var(--ui-accent) !important; color:#fff !important; border:0 !important;
+}
+html[data-theme] body.v2-active .ghost-button{
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line) !important;
+  color: var(--ui-text) !important;
+}
+
+/* 직원 상태 칩 (근무/준비/대기/점검) */
+html[data-theme] body.v2-active .status-chip{
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line) !important;
+  color: var(--ui-text-muted) !important;
+}
+html[data-theme] body.v2-active .status-chip.is-active{
+  background: var(--ui-surface-strong) !important;
+  border-color: var(--ui-line-strong) !important;
+  color: var(--ui-text) !important;
+  box-shadow: var(--ui-shadow-soft) !important;
+}
