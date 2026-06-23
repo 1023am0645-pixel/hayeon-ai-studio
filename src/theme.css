@@ -877,3 +877,543 @@ html[data-theme] body.v2-active .org-tree-emp-av img,
 html[data-theme] body.v2-active .org-tree-emp-av svg{ width: 100%; height: 100%; object-fit: cover; }
 html[data-theme] body.v2-active .org-tree-emp-nm{ font-size: 10.5px; font-weight: 800; color: var(--ui-text); }
 html[data-theme] body.v2-active .org-tree-none{ font-size: 11px; color: var(--ui-text-muted); }
+
+/* ============================================================
+   Mobile responsive shell — brand, actions, building, detail flows
+   ============================================================ */
+@media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: hidden !important;
+  }
+
+  html[data-theme] body.v2-active {
+    min-width: 0 !important;
+  }
+
+  html[data-theme] body.v2-active .game-root {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px !important;
+    gap: 12px !important;
+  }
+
+  html[data-theme] body.v2-active .app-topbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-brand,
+  html[data-theme] body.v2-active .brand-sign-shell,
+  html[data-theme] body.v2-active .topbar-actions {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 62px !important;
+    padding: 12px 16px !important;
+    border-radius: 22px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-main {
+    font-size: clamp(27px, 8.8vw, 42px) !important;
+    line-height: 0.95 !important;
+    letter-spacing: 0.01em !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-subgroup {
+    min-width: 0 !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-sub {
+    font-size: clamp(17px, 5.2vw, 27px) !important;
+    line-height: 1 !important;
+    letter-spacing: 0.05em !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-space {
+    font-size: clamp(10px, 3vw, 13px) !important;
+    letter-spacing: 0.22em !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-actions {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 9px !important;
+    justify-self: stretch !important;
+    margin: 0 !important;
+    overflow-x: auto !important;
+    padding: 2px 4px 4px !important;
+    box-sizing: border-box !important;
+    scrollbar-width: none;
+  }
+
+  html[data-theme] body.v2-active .topbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  html[data-theme] body.v2-active .nav-button.compact-icon-button {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+  }
+
+  html[data-theme] body.v2-active .nav-button .lucide-icon {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  html[data-theme] body.v2-active .workspace-stage,
+  html[data-theme] body.v2-active .workspace-stage.has-detail {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.building-view-active .building-view {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  body.building-view-active .building-shell,
+  body.building-view-active .building-layered-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: grid !important;
+    gap: 12px !important;
+  }
+
+  body.building-view-active .building-live-board {
+    order: 1 !important;
+    width: 100% !important;
+  }
+
+  body.building-view-active .live-activity-bar {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 44px !important;
+    padding: 10px 12px !important;
+    border-radius: 16px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  body.building-view-active .live-activity-bar span:last-child {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.building-view-active .building-stage,
+  body.building-view-active .building-cutaway {
+    order: 2 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    aspect-ratio: 1376 / 768 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+  }
+
+  body.building-view-active .building-illustration-layer,
+  body.building-view-active .agent-overlay-layer,
+  body.building-view-active .ui-overlay-layer {
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  body.building-view-active .floor-hit-title {
+    transform: scale(0.82) !important;
+    transform-origin: left center !important;
+  }
+
+  body.building-view-active .floor-hit-badge {
+    display: none !important;
+  }
+
+  body.building-view-active .layered-building-agent {
+    transform: translateX(-50%) scale(calc(var(--agent-scale, 1) * 0.88)) !important;
+  }
+
+  body.building-view-active .building-agent-name {
+    font-size: 9px !important;
+    max-width: 58px !important;
+  }
+
+  body.building-view-active .building-agent-bubble {
+    max-width: 78px !important;
+    font-size: 9px !important;
+    padding: 3px 6px !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 14px !important;
+    border-radius: 18px !important;
+    display: grid !important;
+    gap: 8px !important;
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+    overflow: hidden !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip span,
+  html[data-theme] body.v2-active .bottom-info-strip small {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: keep-all !important;
+    max-width: 100% !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip strong {
+    width: fit-content !important;
+    font-size: 12px !important;
+  }
+
+  body.floor-detail-active .office-frame {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    border-radius: 18px !important;
+    overflow: visible !important;
+  }
+
+  body.floor-detail-active .office-sign {
+    display: grid !important;
+    gap: 10px !important;
+    text-align: left !important;
+  }
+
+  body.floor-detail-active .office-brand {
+    display: none !important;
+  }
+
+  body.floor-detail-active .office-status {
+    width: 100% !important;
+    margin: 0 !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  body.floor-detail-active .office-grid,
+  body.floor-detail-active .department-grid.floor-detail-grid,
+  body.floor-detail-active .department-grid.floor-detail-floor-1,
+  body.floor-detail-active .department-grid.floor-detail-floor-4 {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    width: 100% !important;
+    min-height: 0 !important;
+  }
+
+  body.floor-detail-active .floor-detail-grid .v2-room {
+    min-height: 300px !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+
+  html[data-theme] body.v2-active .employee-detail-panel {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 10px !important;
+    top: auto !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: 58vh !important;
+    overflow: auto !important;
+    z-index: 1700 !important;
+    border-radius: 20px !important;
+    padding: 16px !important;
+  }
+
+  html[data-theme] body.v2-active .task-drawer,
+  html[data-theme] body.v2-active .orchestration-panel {
+    inset: 10px !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: calc(100vh - 20px) !important;
+    overflow: auto !important;
+    border-radius: 20px !important;
+    padding: 16px !important;
+  }
+
+  html[data-theme] body.v2-active .board-header,
+  html[data-theme] body.v2-active .orchestration-header {
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  html[data-theme] body.v2-active .drawer-actions {
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
+  }
+
+  html[data-theme] body.v2-active .task-form .form-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-theme] body.v2-active .kanban-board-columns {
+    grid-template-columns: 1fr !important;
+  }
+
+  .task-detail-modal,
+  .org-chart-panel,
+  .staff-card-modal {
+    inset: 10px !important;
+    max-height: calc(100vh - 20px) !important;
+    border-radius: 20px !important;
+    padding: 16px !important;
+  }
+}
+
+@media (max-width: 430px) {
+  html[data-theme] body.v2-active .game-root {
+    padding: 10px !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark {
+    min-height: 56px !important;
+    padding: 10px 12px !important;
+    gap: 8px !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-main {
+    font-size: clamp(22px, 7.4vw, 30px) !important;
+    letter-spacing: 0 !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-sub {
+    font-size: clamp(13px, 4.1vw, 17px) !important;
+    letter-spacing: 0.03em !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-space {
+    font-size: 8.5px !important;
+    letter-spacing: 0.14em !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-actions {
+    gap: 6px !important;
+    justify-content: center !important;
+    padding-inline: 0 !important;
+  }
+
+  html[data-theme] body.v2-active .nav-button.compact-icon-button {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+  }
+
+  body.building-view-active .building-stage,
+  body.building-view-active .building-cutaway {
+    border-radius: 14px !important;
+  }
+
+  body.building-view-active .floor-hit-title {
+    transform: scale(0.72) !important;
+  }
+
+  body.building-view-active .layered-building-agent {
+    transform: translateX(-50%) scale(calc(var(--agent-scale, 1) * 0.78)) !important;
+  }
+
+  body.building-view-active .building-agent-bubble {
+    display: none !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip {
+    padding: 12px !important;
+    font-size: 12.5px !important;
+  }
+}
+
+/* Final mobile guardrails: prevent legacy desktop widths from leaking into phones. */
+@media (max-width: 768px) {
+  html[data-theme] body.v2-active *,
+  html[data-theme] body.v2-active *::before,
+  html[data-theme] body.v2-active *::after {
+    box-sizing: border-box;
+  }
+
+  html[data-theme] body.v2-active .app-topbar,
+  html[data-theme] body.v2-active .topbar-brand,
+  html[data-theme] body.v2-active .brand-sign-shell,
+  html[data-theme] body.v2-active .topbar-wordmark,
+  html[data-theme] body.v2-active .topbar-actions,
+  html[data-theme] body.v2-active .workspace-stage,
+  html[data-theme] body.v2-active .building-view,
+  html[data-theme] body.v2-active .building-shell,
+  html[data-theme] body.v2-active .building-layered-shell,
+  html[data-theme] body.v2-active .bottom-info-strip {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  html[data-theme] body.v2-active .app-topbar {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    grid-auto-rows: auto !important;
+    overflow: visible !important;
+  }
+
+  html[data-theme] body.floor-detail-active .app-topbar {
+    margin-bottom: 12px !important;
+  }
+
+  html[data-theme] body.floor-detail-active .topbar-brand {
+    display: none !important;
+  }
+
+  html[data-theme] body.floor-detail-active .topbar-actions {
+    min-height: 40px !important;
+  }
+
+  html[data-theme] body.floor-detail-active .game-root {
+    height: auto !important;
+    min-height: 100dvh !important;
+    grid-template-rows: auto auto auto !important;
+    overflow: visible !important;
+  }
+
+  html[data-theme] body.floor-detail-active .workspace-stage,
+  html[data-theme] body.floor-detail-active .office-frame {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip {
+    height: auto !important;
+    overflow: visible !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip > * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: keep-all !important;
+  }
+
+  html[data-theme] body.v2-active .staff-card-modal {
+    width: auto !important;
+  }
+}
+
+@media (max-width: 430px) {
+  html[data-theme] body.v2-active .topbar-wordmark {
+    min-height: 76px !important;
+    padding: 12px 16px !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    justify-items: center !important;
+    align-items: center !important;
+    gap: 4px !important;
+    text-align: center !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-main {
+    justify-content: center !important;
+    font-size: clamp(29px, 9vw, 35px) !important;
+    line-height: 0.9 !important;
+    -webkit-text-stroke-width: 0 !important;
+    text-stroke-width: 0 !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-subgroup {
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    gap: 2px !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-sub {
+    max-width: 100% !important;
+    font-size: clamp(15px, 4.8vw, 19px) !important;
+    line-height: 1 !important;
+    letter-spacing: 0.07em !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-space {
+    max-width: 100% !important;
+    font-size: 8.5px !important;
+    line-height: 1.2 !important;
+    letter-spacing: 0.18em !important;
+  }
+
+  html[data-theme] body.v2-active .topbar-actions {
+    width: 100% !important;
+    justify-content: center !important;
+    gap: 5px !important;
+    overflow: hidden !important;
+  }
+
+  html[data-theme] body.v2-active .nav-button.compact-icon-button {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+  }
+
+  html[data-theme] body.v2-active .nav-button .lucide-icon {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  html[data-theme] body.v2-active .task-nav-button strong {
+    right: -4px !important;
+    top: -5px !important;
+    min-width: 16px !important;
+    height: 16px !important;
+    font-size: 9px !important;
+  }
+
+  html[data-theme] body.v2-active .bottom-info-strip {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
