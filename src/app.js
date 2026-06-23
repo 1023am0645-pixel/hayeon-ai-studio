@@ -358,17 +358,23 @@ function bindEvents() {
       const message = String(formData.get("message") ?? "").trim();
       if (!message) return;
       const employee = getSelectedEmployee();
-      event.target.reset();
-      showToast(`${employee.name}: 생각 중…`);
+      state.chat = state.chat || {};
+      const log = (state.chat[employee.id] = state.chat[employee.id] || []);
+      log.push({ role: "user", text: message });
+      log.push({ role: "ai", text: "", pending: true });
+      renderEmployeeDetail();
+      scrollChatBottom();
       try {
         const text = await window.HayeonAiAdapter.requestEmployeeReply(employee, message);
-        showToast(`${employee.name}: ${text}`);
+        log[log.length - 1] = { role: "ai", text };
       } catch (err) {
         console.error("agent error:", err);
-        showToast(`연결 오류: ${err && err.message ? err.message : err}`);
         const reply = createSimulatedReply(employee, message);
-        showToast(`${employee.name}(오프라인): ${reply.text}`);
+        log[log.length - 1] = { role: "ai", text: `${reply.text} (오프라인)` };
       }
+      saveState();
+      renderEmployeeDetail();
+      scrollChatBottom();
     }
   });
 
@@ -391,6 +397,7 @@ function bindEvents() {
     if (action === "move") {
       const status = event.target.closest("[data-status]")?.dataset.status;
       updateTaskStatus(taskId, status);
+      if (status === "done") launchConfetti();
     }
 
     if (action === "edit") {
@@ -1008,6 +1015,13 @@ function openBuildingView() {
   saveState();
   render();
   scrollAppToTop();
+}
+
+function scrollChatBottom() {
+  window.requestAnimationFrame(() => {
+    const el = document.getElementById("chatLog");
+    if (el) el.scrollTop = el.scrollHeight;
+  });
 }
 
 function scrollAppToTop() {
@@ -1962,15 +1976,19 @@ function renderDetailMode(employee) {
   }
 
   if (state.detailMode === "chat") {
+    const log = (state.chat && state.chat[employee.id]) || [];
+    const msgs = log.map((m) => {
+      if (m.pending) return `<div class="chat-msg ai is-pending"><span class="chat-typing"><i></i><i></i><i></i></span></div>`;
+      return `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${escapeHtml(m.text)}</div>`;
+    }).join("");
     return `
-      <form class="inline-panel" id="chatForm">
-        <p class="mode-note">현재 버전은 실제 AI 호출 대신 직원 역할 프롬프트를 바탕으로 답변 흐름을 시뮬레이션합니다.</p>
-        <label>
-          메시지
-          <textarea name="message" rows="3" placeholder="${employee.name}에게 물어볼 내용을 입력하세요." required></textarea>
-        </label>
-        <button class="primary-button full-width" type="submit">짧게 대화하기</button>
-      </form>
+      <div class="chat-panel">
+        <div class="chat-log" id="chatLog">${msgs || `<div class="chat-empty">${escapeHtml(employee.name)}에게 무엇이든 물어보세요 \u{1F4AC}</div>`}</div>
+        <form class="chat-input-row" id="chatForm">
+          <textarea name="message" rows="1" placeholder="${escapeHtml(employee.name)}에게 메시지…" required></textarea>
+          <button class="primary-button chat-send" type="submit">전송</button>
+        </form>
+      </div>
     `;
   }
 
@@ -2040,6 +2058,36 @@ function renderBoardFilterTab(value, label) {
   `;
 }
 
+function dDayLabel(dueDate) {
+  if (!dueDate) return "";
+  const due = new Date(`${dueDate}T00:00:00`);
+  if (isNaN(due.getTime())) return "";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = Math.round((due - today) / 86400000);
+  if (d === 0) return `<span class="dday is-today">D-DAY</span>`;
+  if (d < 0) return `<span class="dday is-over">D+${-d}</span>`;
+  if (d <= 3) return `<span class="dday is-soon">D-${d}</span>`;
+  return `<span class="dday">D-${d}</span>`;
+}
+
+function launchConfetti() {
+  const layer = document.createElement("div");
+  layer.className = "confetti-layer";
+  const colors = ["#ff8a63", "#4f9bd0", "#7bb98b", "#f4c64e", "#b07fe0"];
+  for (let i = 0; i < 80; i += 1) {
+    const bit = document.createElement("div");
+    bit.className = "confetti-bit";
+    bit.style.left = `${Math.random() * 100}vw`;
+    bit.style.background = colors[i % colors.length];
+    bit.style.animationDuration = `${1.6 + Math.random() * 1.4}s`;
+    bit.style.animationDelay = `${Math.random() * 0.3}s`;
+    bit.style.transform = `rotate(${Math.random() * 360}deg)`;
+    layer.appendChild(bit);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 3200);
+}
+
 function renderTaskCard(task) {
   const employee = state.employees.find((item) => item.id === task.assigneeId);
   const priorityLabel = {
@@ -2057,7 +2105,7 @@ function renderTaskCard(task) {
       <p>${employee?.name ?? "미지정"} · ${employee?.role ?? ""}</p>
       <div class="task-meta">
         <span>${priorityLabel}</span>
-        <span>${task.dueDate || "마감일 없음"}</span>
+        <span>${task.dueDate || "마감일 없음"}</span>${dDayLabel(task.dueDate)}
       </div>
       <div class="tag-row">
         ${(task.tags ?? []).map((tag) => `<span>${tag}</span>`).join("")}

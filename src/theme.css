@@ -807,9 +807,10 @@ html[data-theme] body.v2-active .orch-nav-count{
 
 /* --- #3 하단 LIVE OFFICE 박스: 불투명 고동색 --- */
 html[data-theme] body.v2-active .bottom-info-strip{
-  background: linear-gradient(180deg, #3a2415 0%, #241509 100%) !important;
-  border: 1px solid rgba(214,170,92,0.34) !important;
-  box-shadow: 0 14px 30px rgba(0,0,0,0.28) !important;
+  background: rgba(40, 32, 25, 0.8) !important;   /* 실시간 활동 바와 동일 톤(--ui-surface-dark) · 80% */
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  box-shadow: 0 14px 30px rgba(0,0,0,0.22) !important;
+  backdrop-filter: blur(6px) !important;
 }
 html[data-theme] body.v2-active .bottom-info-strip,
 html[data-theme] body.v2-active .bottom-info-strip *{ color: #f3e6c8 !important; }
@@ -1528,3 +1529,96 @@ html[data-theme] body.v2-active .org-tree-emp-av .agent-avatar-missing {
   height: 100% !important;
   border-radius: inherit !important;
 }
+
+/* ============================================================
+   Claude polish batch — 대화 로그/hover/애니메이션/말풍선/모바일
+   ============================================================ */
+/* #1·2 채팅 로그 */
+html[data-theme] body.v2-active .chat-panel{ display:flex; flex-direction:column; gap:10px; }
+html[data-theme] body.v2-active .chat-log{
+  max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;
+  padding:10px; border-radius:14px; background:var(--ui-surface); border:1px solid var(--ui-line);
+}
+html[data-theme] body.v2-active .chat-empty{ color:var(--ui-text-muted); font-size:13px; text-align:center; padding:26px 8px; }
+html[data-theme] body.v2-active .chat-msg{
+  max-width:86%; padding:9px 12px; border-radius:14px; font-size:13.5px; line-height:1.55;
+  white-space:pre-wrap; word-break:break-word;
+}
+html[data-theme] body.v2-active .chat-msg.user{ align-self:flex-end; background:var(--ui-accent); color:#fff; border-bottom-right-radius:5px; }
+html[data-theme] body.v2-active .chat-msg.ai{ align-self:flex-start; background:var(--ui-surface-strong); color:var(--ui-text); border:1px solid var(--ui-line); border-bottom-left-radius:5px; }
+html[data-theme] body.v2-active .chat-input-row{ display:flex; gap:8px; align-items:flex-end; }
+html[data-theme] body.v2-active .chat-input-row textarea{
+  flex:1; resize:none; min-height:42px; max-height:120px; border:1px solid var(--ui-line); border-radius:12px;
+  padding:11px 12px; background:var(--ui-surface); color:var(--ui-text); font-size:13.5px;
+}
+html[data-theme] body.v2-active .chat-send{ flex:0 0 auto; padding:11px 16px !important; }
+html[data-theme] body.v2-active .chat-typing{ display:inline-flex; gap:4px; padding:2px 0; }
+html[data-theme] body.v2-active .chat-typing i{ width:7px; height:7px; border-radius:50%; background:var(--ui-text-muted); animation:chatTyping 1s infinite; }
+html[data-theme] body.v2-active .chat-typing i:nth-child(2){ animation-delay:.15s; }
+html[data-theme] body.v2-active .chat-typing i:nth-child(3){ animation-delay:.3s; }
+@keyframes chatTyping{ 0%,60%,100%{transform:translateY(0);opacity:.4;} 30%{transform:translateY(-4px);opacity:1;} }
+
+/* #3 직원/층 hover */
+body.building-view-active .layered-building-agent{ transition: transform .14s ease, filter .14s ease; }
+body.building-view-active .layered-building-agent:hover{
+  transform: translateX(-50%) scale(calc(var(--agent-scale, 1) * 1.16)) !important;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,.28));
+  z-index: 60 !important;
+}
+body.building-view-active .building-floor-hit{ transition: background .15s ease; }
+body.building-view-active .building-floor-hit:hover{ background: rgba(255,255,255,0.10) !important; }
+
+/* #5 패널 등장 애니메이션 */
+@keyframes panelIn{ from{opacity:0; transform:translateY(12px) scale(.985);} to{opacity:1; transform:none;} }
+html[data-theme] body.v2-active .task-drawer:not(.is-hidden),
+html[data-theme] body.v2-active .employee-detail-panel:not(.is-hidden),
+html[data-theme] body.v2-active .org-chart-panel:not(.is-hidden),
+html[data-theme] body.v2-active .orchestration-panel:not(.is-hidden),
+html[data-theme] body.v2-active .task-detail-modal:not(.is-hidden),
+html[data-theme] body.v2-active .staff-card-modal:not(.is-hidden){ animation: panelIn .22s ease both; }
+
+/* #6 말풍선 — 테마 적용 */
+body.building-view-active .building-agent-bubble{
+  background: var(--ui-surface-strong) !important;
+  color: var(--ui-text) !important;
+  border: 1px solid var(--ui-line) !important;
+  box-shadow: var(--ui-shadow-soft) !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+}
+
+/* #9 다크 테마에서 건물 톤 살짝 차분하게 */
+html[data-theme="dark"] body.building-view-active .building-illustration-layer{ filter: brightness(.82) saturate(.96) contrast(1.02); }
+
+/* #8 컨페티 */
+.confetti-layer{ position:fixed; inset:0; pointer-events:none; z-index:9999; overflow:hidden; }
+.confetti-bit{ position:absolute; top:-12px; width:9px; height:14px; border-radius:2px; opacity:.95; animation: confettiFall linear forwards; }
+@keyframes confettiFall{ to{ transform: translateY(108vh) rotate(720deg); opacity:.9; } }
+
+/* #10 모바일 반응형 */
+@media (max-width: 768px){
+  html[data-theme] body.v2-active .topbar-actions{ gap:6px !important; }
+  html[data-theme] body.v2-active .nav-button.compact-icon-button{ width:38px !important; height:38px !important; }
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-main{ font-size: clamp(1.3rem,7vw,1.8rem) !important; }
+  html[data-theme] body.v2-active .topbar-wordmark .wordmark-sub{ font-size: clamp(0.9rem,4.5vw,1.2rem) !important; }
+  html[data-theme] body.v2-active .task-drawer,
+  html[data-theme] body.v2-active .employee-detail-panel,
+  html[data-theme] body.v2-active .org-chart-panel,
+  html[data-theme] body.v2-active .orchestration-panel,
+  html[data-theme] body.v2-active .task-detail-modal,
+  html[data-theme] body.v2-active .staff-card-modal{
+    width: calc(100vw - 16px) !important; max-width: none !important;
+    left: 8px !important; right: 8px !important;
+  }
+  html[data-theme] body.v2-active .org-tree{ min-width: 560px; }
+  html[data-theme] body.v2-active .bottom-info-strip{ font-size: 12px !important; }
+}
+
+/* D-day 배지 */
+html[data-theme] body.v2-active .dday{
+  display:inline-block; margin-left:6px; padding:2px 8px; border-radius:999px;
+  font-size:11px; font-weight:900; background:var(--ui-accent-soft); color:var(--ui-accent);
+}
+html[data-theme] body.v2-active .dday.is-soon{ background:rgba(244,198,78,.22); color:#9a7414; }
+html[data-theme] body.v2-active .dday.is-today{ background:rgba(226,75,74,.18); color:#c0392b; }
+html[data-theme] body.v2-active .dday.is-over{ background:rgba(120,120,120,.18); color:var(--ui-text-muted); }
