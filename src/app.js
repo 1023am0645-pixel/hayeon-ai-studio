@@ -121,6 +121,7 @@ const uiThemes = ["aurora", "light", "dark"];
 const boardFilters = ["all", "todo", "doing", "review", "done"];
 let state = loadState();
 let bubbleTick = 0;
+let orgViewMode = "card";
 const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
 const orchestrationUi = {
@@ -2214,6 +2215,14 @@ function handleOrgChartClick(event) {
     openStaffCardModal();
     return;
   }
+  if (action === "set-view") {
+    const view = event.target.closest("[data-view]")?.dataset.view;
+    if (view && view !== orgViewMode) {
+      orgViewMode = view;
+      renderOrgChartPanel();
+    }
+    return;
+  }
 
   const employeeButton = event.target.closest("[data-org-employee-id]");
   if (!employeeButton) return;
@@ -2225,11 +2234,10 @@ function handleOrgChartClick(event) {
 }
 
 function renderOrgChartPanel() {
-  const floorRows = floors
-    .slice()
-    .sort((a, b) => b.level - a.level)
-    .map(renderOrgFloorRow)
-    .join("");
+  const ordered = floors.slice().sort((a, b) => b.level - a.level);
+  const body = orgViewMode === "tree"
+    ? renderOrgTree(ordered)
+    : ordered.map(renderOrgFloorRow).join("");
 
   refs.orgChartPanel.innerHTML = `
     <div class="org-chart-header">
@@ -2239,6 +2247,10 @@ function renderOrgChartPanel() {
       </div>
       <button class="detail-close" data-org-action="close" type="button" aria-label="조직도 닫기">×</button>
     </div>
+    <div class="org-view-toggle">
+      <button class="org-view-btn ${orgViewMode === "card" ? "is-active" : ""}" data-org-action="set-view" data-view="card" type="button">카드형</button>
+      <button class="org-view-btn ${orgViewMode === "tree" ? "is-active" : ""}" data-org-action="set-view" data-view="tree" type="button">계층형</button>
+    </div>
     <button class="org-ceo-card" data-org-action="ceo-card" type="button">
       <span class="org-ceo-photo"><img src="./assets/avatars/ceo.jpg" alt="HAYEON 대표"></span>
       <span>
@@ -2246,10 +2258,47 @@ function renderOrgChartPanel() {
         <em>대표 · Founder · 5F 대표실</em>
       </span>
     </button>
-    <div class="org-chart-floors">
-      ${floorRows}
+    <div class="${orgViewMode === "tree" ? "org-chart-tree-wrap" : "org-chart-floors"}">
+      ${body}
     </div>
   `;
+}
+
+function renderOrgTree(orderedFloors) {
+  const deptCount = floors
+    .flatMap((f) => f.roomIds).map(getRoom).filter(Boolean)
+    .filter((room) => state.employees.some((e) => getEmployeeRoomId(e) === room.id)).length;
+  const cols = orderedFloors.map((floor) => {
+    const rooms = floor.roomIds.map(getRoom).filter(Boolean);
+    const deps = rooms.map((room) => {
+      const emps = state.employees.filter((e) => getEmployeeRoomId(e) === room.id);
+      const chips = emps.map((e) => `
+        <button class="org-tree-emp" data-org-employee-id="${escapeHtml(e.id)}" type="button" title="${escapeHtml(e.name)} · ${escapeHtml(e.role)}">
+          <span class="org-tree-emp-av" aria-hidden="true">${renderAvatarVisual(e)}</span>
+          <span class="org-tree-emp-nm">${escapeHtml(e.name)}</span>
+        </button>`).join("");
+      return `
+        <div class="org-tree-dep">
+          <div class="org-tree-dep-name">${escapeHtml(room.shortName ?? room.name)}<span>${emps.length}</span></div>
+          <div class="org-tree-emps">${chips || '<em class="org-tree-none">없음</em>'}</div>
+        </div>`;
+    }).join("");
+    return `
+      <div class="org-tree-col">
+        <span class="org-tree-stub"></span>
+        <div class="org-tree-div">${escapeHtml(floor.shortName)}</div>
+        <div class="org-tree-deps">${deps}</div>
+      </div>`;
+  }).join("");
+  return `
+    <div class="org-tree">
+      <div class="org-tree-top">대표실</div>
+      <div class="org-tree-trunk"></div>
+      <div class="org-tree-cap">5개 층 · ${deptCount}개 부서 · AI 직원 ${state.employees.length}명</div>
+      <div class="org-tree-trunk"></div>
+      <div class="org-tree-hbar"></div>
+      <div class="org-tree-cols">${cols}</div>
+    </div>`;
 }
 
 function renderOrgFloorRow(floor) {

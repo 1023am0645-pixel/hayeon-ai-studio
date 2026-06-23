@@ -774,3 +774,106 @@ html[data-theme] body.v2-active .status-chip.is-active{
   color: var(--ui-text) !important;
   box-shadow: var(--ui-shadow-soft) !important;
 }
+
+/* ============================================================
+   Claude fixes #1~#4
+   ============================================================ */
+/* --- #4 상단 버튼: 동글동글 귀엽게 --- */
+html[data-theme] body.v2-active .nav-button.compact-icon-button{
+  width: 42px !important; height: 42px !important;
+  border-radius: 50% !important;
+  background: var(--ui-surface-strong) !important;
+  border: 1px solid var(--ui-line) !important;
+  box-shadow: var(--ui-shadow-soft) !important;
+  transition: transform .12s ease, background .15s ease !important;
+}
+html[data-theme] body.v2-active .nav-button.compact-icon-button:hover{
+  transform: translateY(-2px) scale(1.05) !important;
+  background: var(--ui-surface) !important;
+}
+html[data-theme] body.v2-active .nav-button .lucide-icon{
+  width: 21px !important; height: 21px !important;
+  stroke-width: 2.1 !important; stroke-linecap: round !important; stroke-linejoin: round !important;
+  color: var(--ui-text) !important;
+}
+html[data-theme] body.v2-active .nav-button.primary{
+  background: var(--ui-accent) !important; border-color: transparent !important;
+}
+html[data-theme] body.v2-active .nav-button.primary .lucide-icon{ color: #fff !important; }
+html[data-theme] body.v2-active .task-nav-button strong,
+html[data-theme] body.v2-active .orch-nav-count{
+  background: var(--ui-accent) !important; color:#fff !important;
+}
+
+/* --- #3 하단 LIVE OFFICE 박스: 불투명 고동색 --- */
+html[data-theme] body.v2-active .bottom-info-strip{
+  background: linear-gradient(180deg, #3a2415 0%, #241509 100%) !important;
+  border: 1px solid rgba(214,170,92,0.34) !important;
+  box-shadow: 0 14px 30px rgba(0,0,0,0.28) !important;
+}
+html[data-theme] body.v2-active .bottom-info-strip,
+html[data-theme] body.v2-active .bottom-info-strip *{ color: #f3e6c8 !important; }
+html[data-theme] body.v2-active .bottom-info-strip strong{
+  background: #caa15a !important; color: #241509 !important;
+}
+html[data-theme] body.v2-active .bottom-info-strip .office-census{ color: #ffe6a6 !important; }
+
+/* --- #2 AI STAFF 상세 아바타: 얼굴 보이게 --- */
+html[data-theme] body.v2-active .detail-avatar-wrap .staff-id-photo{
+  overflow: hidden !important; border-radius: 16px !important;
+  background: var(--ui-surface-strong) !important; border: 1px solid var(--ui-line) !important;
+}
+html[data-theme] body.v2-active .detail-avatar-wrap .staff-id-photo-image{
+  position: static !important; left: auto !important; bottom: auto !important;
+  width: 100% !important; height: 100% !important; max-width: none !important;
+  transform: none !important;
+  object-fit: contain !important; object-position: center top !important;
+}
+
+/* --- #1 계층형 조직도 --- */
+html[data-theme] body.v2-active .org-view-toggle{
+  display: inline-flex; gap: 4px; margin: 4px 0 14px;
+  background: var(--ui-surface); border: 1px solid var(--ui-line);
+  border-radius: 12px; padding: 4px;
+}
+html[data-theme] body.v2-active .org-view-btn{
+  border: 0; background: transparent; padding: 7px 16px; border-radius: 9px;
+  font-weight: 800; font-size: 13px; color: var(--ui-text-muted); cursor: pointer;
+}
+html[data-theme] body.v2-active .org-view-btn.is-active{
+  background: var(--ui-surface-strong); color: var(--ui-accent); box-shadow: var(--ui-shadow-soft);
+}
+html[data-theme] body.v2-active .org-chart-tree-wrap{ overflow-x: auto; padding-bottom: 8px; }
+html[data-theme] body.v2-active .org-tree{ min-width: 640px; text-align: center; padding: 4px 6px 12px; }
+html[data-theme] body.v2-active .org-tree-top{
+  display: inline-block; padding: 11px 30px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--ui-accent-2), var(--ui-accent));
+  color: #fff; font-weight: 900; font-size: 16px; box-shadow: var(--ui-shadow-soft);
+}
+html[data-theme] body.v2-active .org-tree-cap{
+  display: inline-block; margin: 0 auto; background: var(--ui-surface-strong);
+  border: 1px solid var(--ui-line); border-radius: 10px; padding: 7px 14px;
+  font-size: 12.5px; font-weight: 800; color: var(--ui-text);
+}
+html[data-theme] body.v2-active .org-tree-trunk{ width: 2px; height: 16px; background: var(--ui-line-strong); margin: 0 auto; }
+html[data-theme] body.v2-active .org-tree-hbar{ height: 2px; background: var(--ui-line-strong); margin: 0 auto 0; width: 82%; }
+html[data-theme] body.v2-active .org-tree-cols{ display: flex; gap: 14px; justify-content: center; align-items: flex-start; margin-top: 0; }
+html[data-theme] body.v2-active .org-tree-col{ flex: 1; min-width: 130px; display: flex; flex-direction: column; align-items: center; }
+html[data-theme] body.v2-active .org-tree-stub{ width: 2px; height: 16px; background: var(--ui-line-strong); }
+html[data-theme] body.v2-active .org-tree-div{
+  width: 100%; padding: 9px; border-radius: 11px; color: #fff; font-weight: 800; font-size: 14px;
+  background: linear-gradient(135deg, var(--ui-accent-2), color-mix(in srgb, var(--ui-accent-2), #ffffff 14%));
+  box-shadow: var(--ui-shadow-soft);
+}
+html[data-theme] body.v2-active .org-tree-deps{ width: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+html[data-theme] body.v2-active .org-tree-dep{ background: var(--ui-surface-strong); border: 1px solid var(--ui-line); border-radius: 12px; padding: 8px; }
+html[data-theme] body.v2-active .org-tree-dep-name{ font-size: 12px; font-weight: 800; color: var(--ui-text); margin-bottom: 7px; display: flex; justify-content: center; gap: 6px; }
+html[data-theme] body.v2-active .org-tree-dep-name span{ background: var(--ui-accent-soft); color: var(--ui-accent); border-radius: 999px; padding: 0 7px; font-size: 11px; }
+html[data-theme] body.v2-active .org-tree-emps{ display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+html[data-theme] body.v2-active .org-tree-emp{ border: 0; background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; width: 58px; }
+html[data-theme] body.v2-active .org-tree-emp:hover{ background: var(--ui-surface-strong); }
+html[data-theme] body.v2-active .org-tree-emp-av{ width: 34px; height: 34px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; }
+html[data-theme] body.v2-active .org-tree-emp-av img,
+html[data-theme] body.v2-active .org-tree-emp-av svg{ width: 100%; height: 100%; object-fit: cover; }
+html[data-theme] body.v2-active .org-tree-emp-nm{ font-size: 10.5px; font-weight: 800; color: var(--ui-text); }
+html[data-theme] body.v2-active .org-tree-none{ font-size: 11px; color: var(--ui-text-muted); }
