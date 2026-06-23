@@ -32,8 +32,16 @@ const refs = {
   toggleTaskFormButton: $("#toggleTaskFormButton"),
   openTaskBoardButton: $("#openTaskBoardButton"),
   closeTaskBoardButton: $("#closeTaskBoardButton"),
+  openOrgChartButton: $("#openOrgChartButton"),
+  themeToggleButton: $("#themeToggleButton"),
   fullscreenButton: $("#fullscreenButton"),
   openOrchestrationButton: $("#openOrchestrationButton"),
+  taskDetailBackdrop: $("#taskDetailBackdrop"),
+  taskDetailModal: $("#taskDetailModal"),
+  orgChartBackdrop: $("#orgChartBackdrop"),
+  orgChartPanel: $("#orgChartPanel"),
+  staffCardBackdrop: $("#staffCardBackdrop"),
+  staffCardModal: $("#staffCardModal"),
   orchestrationBackdrop: $("#orchestrationBackdrop"),
   orchestrationPanel: $("#orchestrationPanel"),
   closeOrchestrationButton: $("#closeOrchestrationButton"),
@@ -69,11 +77,15 @@ const failedAvatarSrcs = new Set();
 const orchestrationUi = {
   isRunning: false,
 };
+const uiThemeKey = "hayeon-ui-theme";
+const uiThemes = ["aurora", "light", "dark"];
+const boardFilters = ["all", "todo", "doing", "review", "done"];
 
 boot();
 
 function boot() {
   document.body.classList.add("v2-active");
+  applyTheme(state.theme);
   setupViewContainers();
   bindEvents();
   fillAssigneeOptions();
@@ -105,6 +117,9 @@ function getInitialState() {
     selectedFloorId: null,
     selectedEmployeeId: null,
     detailMode: "summary",
+    boardFilter: "all",
+    selectedTaskId: null,
+    theme: getStoredTheme(),
   };
 }
 
@@ -121,6 +136,9 @@ function loadState() {
       selectedFloorId: null,
       selectedEmployeeId: null,
       detailMode: "summary",
+      boardFilter: normalizeBoardFilter(parsed.boardFilter),
+      selectedTaskId: null,
+      theme: normalizeTheme(parsed.theme ?? getStoredTheme()),
       employees: hydrateEmployees(parsed.employees),
       tasks: hydrateTasks(parsed.tasks),
       orch: hydrateOrch(parsed.orch),
@@ -175,6 +193,42 @@ function hydrateTasks(savedTasks = []) {
 
 function saveState() {
   window.localStorage.setItem(appConfig.localStorageKey, JSON.stringify(state));
+}
+
+function normalizeTheme(theme) {
+  return uiThemes.includes(theme) ? theme : "aurora";
+}
+
+function getStoredTheme() {
+  return normalizeTheme(window.localStorage.getItem(uiThemeKey) || "aurora");
+}
+
+function applyTheme(theme) {
+  const nextTheme = normalizeTheme(theme);
+  state.theme = nextTheme;
+  document.documentElement.dataset.theme = nextTheme;
+  window.localStorage.setItem(uiThemeKey, nextTheme);
+  if (refs.themeToggleButton) {
+    const label = {
+      aurora: "Aurora Glass",
+      light: "Light Blue",
+      dark: "Dark Studio",
+    }[nextTheme];
+    refs.themeToggleButton.setAttribute("aria-label", `테마 전환: ${label}`);
+    refs.themeToggleButton.setAttribute("title", `테마: ${label}`);
+  }
+}
+
+function cycleTheme() {
+  const currentIndex = uiThemes.indexOf(normalizeTheme(state.theme));
+  const nextTheme = uiThemes[(currentIndex + 1) % uiThemes.length];
+  applyTheme(nextTheme);
+  saveState();
+  showToast(`테마: ${nextTheme}`);
+}
+
+function normalizeBoardFilter(filter) {
+  return boardFilters.includes(filter) ? filter : "all";
 }
 
 function setupViewContainers() {
@@ -278,7 +332,12 @@ function bindEvents() {
     const taskId = card.dataset.taskId;
     const action = event.target.closest("[data-task-action]")?.dataset.taskAction;
     if (!action) {
-      selectTaskAssignee(taskId);
+      openTaskDetailModal(taskId);
+      return;
+    }
+
+    if (action === "open-result") {
+      openTaskDetailModal(taskId);
       return;
     }
 
@@ -305,6 +364,14 @@ function bindEvents() {
     }
   });
 
+  refs.kanban.addEventListener("change", (event) => {
+    const filter = event.target.closest("[name='boardFilter']")?.value;
+    if (!filter) return;
+    state.boardFilter = normalizeBoardFilter(filter);
+    saveState();
+    renderKanban();
+  });
+
   refs.taskForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const formData = new FormData(event.target);
@@ -322,6 +389,15 @@ function bindEvents() {
 
   refs.openTaskBoardButton.addEventListener("click", () => {
     openTaskDrawer();
+  });
+
+  refs.openOrgChartButton.addEventListener("click", openOrgChartPanel);
+  refs.themeToggleButton.addEventListener("click", cycleTheme);
+  document.querySelector(".topbar-wordmark")?.addEventListener("click", openStaffCardModal);
+  document.querySelector(".topbar-wordmark")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openStaffCardModal();
   });
 
   refs.fullscreenButton.addEventListener("click", toggleFullscreenView);
@@ -342,6 +418,13 @@ function bindEvents() {
   refs.taskDrawerBackdrop.addEventListener("click", () => {
     closeTaskDrawer();
   });
+
+  refs.taskDetailBackdrop.addEventListener("click", closeTaskDetailModal);
+  refs.taskDetailModal.addEventListener("click", handleTaskDetailClick);
+  refs.orgChartBackdrop.addEventListener("click", closeOrgChartPanel);
+  refs.orgChartPanel.addEventListener("click", handleOrgChartClick);
+  refs.staffCardBackdrop.addEventListener("click", closeStaffCardModal);
+  refs.staffCardModal.addEventListener("click", handleStaffCardClick);
 
   refs.closeOrchestrationButton.addEventListener("click", () => {
     closeOrchestrationPanel();
@@ -530,6 +613,7 @@ function upsertOrchestrationItem(update) {
     employeeId: update.employee?.id ?? "",
     name: employeeName,
     subtask: update.subtask ?? "",
+    order: Number.isFinite(update.order) ? update.order : (index >= 0 ? state.orch.items[index].order : state.orch.items.length),
     status: nextStatus,
     phase: update.phase,
     text: update.text ?? "",
@@ -547,6 +631,7 @@ function upsertOrchestrationItem(update) {
       error: patch.error || state.orch.items[index].error,
       needsReview: patch.needsReview || Boolean(state.orch.items[index].needsReview),
       taskId: patch.taskId || state.orch.items[index].taskId,
+      order: Number.isFinite(patch.order) ? patch.order : state.orch.items[index].order,
     };
     return;
   }
@@ -610,6 +695,7 @@ async function approveOrchestrationItem(key) {
 
   try {
     await executeOrchestrationItem(item, { onUpdate: applyOrchestrationUpdate });
+    await runQueuedOrchestrationItems({ onUpdate: applyOrchestrationUpdate });
     await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
   } finally {
     orchestrationUi.isRunning = false;
@@ -635,8 +721,10 @@ function editOrchestrationItem(key) {
 
 async function skipOrchestrationItem(key) {
   const item = findOrchestrationItem(key);
-  if (!item || item.status !== "review") return;
+  if (!item || item.status !== "review" || orchestrationUi.isRunning) return;
 
+  orchestrationUi.isRunning = true;
+  state.orch.running = true;
   item.status = "skipped";
   item.phase = "skipped";
   item.text = "";
@@ -645,7 +733,13 @@ async function skipOrchestrationItem(key) {
   renderOrchestrationProgress();
   renderOrchestrationBadge();
   showToast(`${item.name} 업무를 건너뛰었습니다.`);
-  await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
+  try {
+    await runQueuedOrchestrationItems({ onUpdate: applyOrchestrationUpdate });
+    await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
+  } finally {
+    orchestrationUi.isRunning = false;
+    renderOrchestrationBadge();
+  }
 }
 
 function openOrchestrationDetail(key) {
@@ -934,7 +1028,7 @@ function renderOrchestrationBadge() {
   }
 
   refs.openOrchestrationButton.classList.remove("has-orch-progress", "is-complete");
-  refs.openOrchestrationButton.innerHTML = `<span aria-hidden="true">🧭</span>`;
+  refs.openOrchestrationButton.innerHTML = `<span aria-hidden="true">＋</span>`;
   refs.openOrchestrationButton.setAttribute("aria-label", "전 직원에게 지시");
   refs.openOrchestrationButton.setAttribute("title", "전 직원에게 지시");
 }
@@ -1863,7 +1957,21 @@ function renderDetailMode(employee) {
 }
 
 function renderKanban() {
-  refs.kanban.innerHTML = taskColumns
+  const activeFilter = normalizeBoardFilter(state.boardFilter);
+  const visibleColumns = activeFilter === "all"
+    ? taskColumns
+    : taskColumns.filter((column) => column.id === activeFilter);
+
+  refs.kanban.innerHTML = `
+    <div class="board-filter-tabs" aria-label="업무 상태 필터">
+      ${renderBoardFilterTab("all", "전체")}
+      ${renderBoardFilterTab("todo", "할 일")}
+      ${renderBoardFilterTab("doing", "진행 중")}
+      ${renderBoardFilterTab("review", "검토")}
+      ${renderBoardFilterTab("done", "완료")}
+    </div>
+    <div class="kanban-board-columns">
+      ${visibleColumns
     .map((column) => {
       const tasks = state.tasks.filter((task) => task.status === column.id);
       return `
@@ -1881,7 +1989,19 @@ function renderKanban() {
         </section>
       `;
     })
-    .join("");
+    .join("")}
+    </div>
+  `;
+}
+
+function renderBoardFilterTab(value, label) {
+  const checked = normalizeBoardFilter(state.boardFilter) === value ? "checked" : "";
+  return `
+    <label class="board-filter-tab ${checked ? "is-active" : ""}">
+      <input type="radio" name="boardFilter" value="${value}" ${checked} />
+      <span>${label}</span>
+    </label>
+  `;
 }
 
 function renderTaskCard(task) {
@@ -1907,6 +2027,7 @@ function renderTaskCard(task) {
         ${(task.tags ?? []).map((tag) => `<span>${tag}</span>`).join("")}
       </div>
       <div class="task-actions">
+        ${(task.resultText || task.resultError) ? '<button class="mini-button" data-task-action="open-result" type="button">문서</button>' : ""}
         ${taskColumns
           .filter((column) => column.id !== task.status)
           .map(
@@ -1923,15 +2044,286 @@ function renderTaskCard(task) {
   `;
 }
 
+function openTaskDetailModal(taskId) {
+  const task = getTask(taskId);
+  if (!task) return;
+  state.selectedTaskId = taskId;
+  saveState();
+  renderTaskDetailModal(task);
+  refs.taskDetailBackdrop.classList.remove("is-hidden");
+  refs.taskDetailModal.classList.remove("is-hidden");
+  refs.taskDetailModal.setAttribute("aria-hidden", "false");
+}
+
+function closeTaskDetailModal() {
+  state.selectedTaskId = null;
+  saveState();
+  refs.taskDetailBackdrop.classList.add("is-hidden");
+  refs.taskDetailModal.classList.add("is-hidden");
+  refs.taskDetailModal.setAttribute("aria-hidden", "true");
+  refs.taskDetailModal.innerHTML = "";
+}
+
+function handleTaskDetailClick(event) {
+  const action = event.target.closest("[data-task-detail-action]")?.dataset.taskDetailAction;
+  if (!action) return;
+  const task = getTask(state.selectedTaskId);
+
+  if (action === "close") {
+    closeTaskDetailModal();
+    return;
+  }
+
+  if (action === "employee" && task) {
+    closeTaskDetailModal();
+    selectTaskAssignee(task.id);
+    return;
+  }
+
+  if (action === "download" && task) {
+    downloadTaskDocument(task);
+  }
+}
+
+function renderTaskDetailModal(task) {
+  const employee = getEmployee(task.assigneeId);
+  const status = taskColumns.find((column) => column.id === task.status);
+  const priorityLabel = { high: "높음", medium: "보통", low: "낮음" }[task.priority] ?? "보통";
+  const resultText = task.resultText || task.resultError || "";
+  refs.taskDetailModal.innerHTML = `
+    <div class="task-detail-header">
+      <div>
+        <p class="eyebrow">TASK DETAIL</p>
+        <h2 id="taskDetailTitle">${escapeHtml(task.title)}</h2>
+      </div>
+      <button class="detail-close" data-task-detail-action="close" type="button" aria-label="업무 상세 닫기">×</button>
+    </div>
+    <div class="task-detail-meta">
+      <span>${escapeHtml(status?.title ?? task.status)}</span>
+      <span>담당 ${escapeHtml(employee?.name ?? "미지정")}</span>
+      <span>우선순위 ${escapeHtml(priorityLabel)}</span>
+      <span>${task.dueDate ? `마감 ${escapeHtml(task.dueDate)}` : "마감일 없음"}</span>
+    </div>
+    <section class="task-detail-section">
+      <strong>진행상황</strong>
+      <p>${escapeHtml(getTaskProgressText(task, employee))}</p>
+    </section>
+    <section class="task-detail-section">
+      <strong>저장된 산출물</strong>
+      ${
+        resultText
+          ? `<pre>${escapeHtml(resultText)}</pre>`
+          : `<p>아직 이 업무에 연결된 산출물이 없습니다.</p>`
+      }
+    </section>
+    <div class="task-detail-actions">
+      <button class="ghost-button" data-task-detail-action="employee" type="button">담당자 보기</button>
+      <button class="primary-button" data-task-detail-action="download" type="button" ${resultText ? "" : "disabled"}>문서 열기</button>
+    </div>
+  `;
+}
+
+function getTaskProgressText(task, employee) {
+  if (task.resultError) return `처리 중 오류가 있었습니다: ${task.resultError}`;
+  if (task.resultText) return `${employee?.name ?? "직원"} 산출물이 저장되었습니다.`;
+  if (task.status === "done") return "완료된 업무입니다.";
+  if (task.status === "review") return "운영자 검토가 필요한 상태입니다.";
+  if (task.status === "doing") return `${employee?.name ?? "직원"}이 처리 중입니다.`;
+  return "아직 시작 전입니다.";
+}
+
+function downloadTaskDocument(task) {
+  const body = [
+    `# ${task.title}`,
+    "",
+    `- 담당자: ${getEmployee(task.assigneeId)?.name ?? "미지정"}`,
+    `- 상태: ${taskColumns.find((column) => column.id === task.status)?.title ?? task.status}`,
+    `- 생성일: ${task.createdAt ?? ""}`,
+    "",
+    "## 산출물",
+    "",
+    task.resultText || task.resultError || "저장된 산출물이 없습니다.",
+  ].join("\n");
+  const blob = new Blob([body], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${task.title.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 50) || "task"}.md`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function openOrgChartPanel() {
+  renderOrgChartPanel();
+  refs.orgChartBackdrop.classList.remove("is-hidden");
+  refs.orgChartPanel.classList.remove("is-hidden");
+  refs.orgChartPanel.setAttribute("aria-hidden", "false");
+}
+
+function closeOrgChartPanel() {
+  refs.orgChartBackdrop.classList.add("is-hidden");
+  refs.orgChartPanel.classList.add("is-hidden");
+  refs.orgChartPanel.setAttribute("aria-hidden", "true");
+}
+
+function handleOrgChartClick(event) {
+  const action = event.target.closest("[data-org-action]")?.dataset.orgAction;
+  if (action === "close") {
+    closeOrgChartPanel();
+    return;
+  }
+  if (action === "ceo-card") {
+    closeOrgChartPanel();
+    openStaffCardModal();
+    return;
+  }
+
+  const employeeButton = event.target.closest("[data-org-employee-id]");
+  if (!employeeButton) return;
+  state.selectedEmployeeId = employeeButton.dataset.orgEmployeeId;
+  state.detailMode = "summary";
+  saveState();
+  renderEmployeeDetail();
+  closeOrgChartPanel();
+}
+
+function renderOrgChartPanel() {
+  const floorRows = floors
+    .slice()
+    .sort((a, b) => b.level - a.level)
+    .map(renderOrgFloorRow)
+    .join("");
+
+  refs.orgChartPanel.innerHTML = `
+    <div class="org-chart-header">
+      <div>
+        <p class="eyebrow">ORGANIZATION</p>
+        <h2 id="orgChartTitle">LIVE OFFICE 조직도</h2>
+      </div>
+      <button class="detail-close" data-org-action="close" type="button" aria-label="조직도 닫기">×</button>
+    </div>
+    <button class="org-ceo-card" data-org-action="ceo-card" type="button">
+      <span class="org-ceo-photo"><img src="./assets/avatars/ceo.jpg" alt="HAYEON 대표"></span>
+      <span>
+        <strong>HAYEON</strong>
+        <em>대표 · Founder · 5F 대표실</em>
+      </span>
+    </button>
+    <div class="org-chart-floors">
+      ${floorRows}
+    </div>
+  `;
+}
+
+function renderOrgFloorRow(floor) {
+  const roomsInFloor = floor.roomIds.map(getRoom).filter(Boolean);
+  const roomRows = roomsInFloor.map((room) => {
+    const roomEmployees = state.employees.filter((employee) => getEmployeeRoomId(employee) === room.id);
+    return `
+      <section class="org-room-card">
+        <div class="org-room-title">
+          <strong>${escapeHtml(room.name)}</strong>
+          <span>${roomEmployees.length}명</span>
+        </div>
+        <div class="org-employee-grid">
+          ${roomEmployees.map(renderOrgEmployeeCard).join("") || "<p>배치된 직원이 없습니다.</p>"}
+        </div>
+      </section>
+    `;
+  }).join("");
+
+  return `
+    <article class="org-floor-row">
+      <header>
+        <strong>${escapeHtml(floor.name)}</strong>
+        <span>${escapeHtml(floor.mission)}</span>
+      </header>
+      <div class="org-room-grid">${roomRows}</div>
+    </article>
+  `;
+}
+
+function renderOrgEmployeeCard(employee) {
+  const taskCount = state.tasks.filter((task) => task.assigneeId === employee.id).length;
+  return `
+    <button class="org-employee-card" data-org-employee-id="${escapeHtml(employee.id)}" type="button">
+      <span class="org-employee-avatar" aria-hidden="true">${renderAvatarVisual(employee)}</span>
+      <span>
+        <strong>${escapeHtml(employee.name)}</strong>
+        <em>${escapeHtml(employee.role)}</em>
+        <small>${taskCount}개 업무 · ${escapeHtml(statusMeta[employee.status]?.label ?? employee.status)}</small>
+      </span>
+    </button>
+  `;
+}
+
+function openStaffCardModal() {
+  renderStaffCardModal();
+  refs.staffCardBackdrop.classList.remove("is-hidden");
+  refs.staffCardModal.classList.remove("is-hidden");
+  refs.staffCardModal.setAttribute("aria-hidden", "false");
+}
+
+function closeStaffCardModal() {
+  refs.staffCardBackdrop.classList.add("is-hidden");
+  refs.staffCardModal.classList.add("is-hidden");
+  refs.staffCardModal.setAttribute("aria-hidden", "true");
+}
+
+function handleStaffCardClick(event) {
+  const action = event.target.closest("[data-staff-card-action]")?.dataset.staffCardAction;
+  if (action === "close") closeStaffCardModal();
+}
+
+function renderStaffCardModal() {
+  refs.staffCardModal.innerHTML = `
+    <div class="staff-card-header">
+      <div>
+        <p class="eyebrow">REPRESENTATIVE ID</p>
+        <h2 id="staffCardTitle">대표 사원증</h2>
+      </div>
+      <button class="detail-close" data-staff-card-action="close" type="button" aria-label="사원증 닫기">×</button>
+    </div>
+    <div class="staff-card-layout">
+      <article class="staff-id-card staff-id-vertical">
+        <div class="staff-id-photo">
+          <img src="./assets/avatars/ceo.jpg" alt="HAYEON 대표 사원증 사진">
+        </div>
+        <div class="staff-id-copy">
+          <span>HA:YEON AI STUDIO</span>
+          <strong>HAYEON</strong>
+          <em>대표 · Founder</em>
+          <p>AI 러닝 디렉터 / 신입직원 입문교육 사내강사 / 대학생 취업특강 강사</p>
+          <small>HY-0001 · Since 2026</small>
+        </div>
+      </article>
+      <article class="staff-id-card staff-id-horizontal">
+        <div class="staff-id-photo">
+          <img src="./assets/avatars/ceo.jpg" alt="HAYEON 대표 사원증 사진">
+        </div>
+        <div class="staff-id-copy">
+          <span>5F 대표/관제 · 대표실</span>
+          <strong>HAYEON</strong>
+          <em>Founder</em>
+          <p>사내 강사 활동, 강의 아카이브, AX-서포터즈 운영을 총괄합니다.</p>
+          <small>AI Learning Director</small>
+        </div>
+      </article>
+    </div>
+  `;
+}
+
 function fillAssigneeOptions() {
   refs.taskAssigneeSelect.innerHTML = state.employees
     .map((employee) => `<option value="${employee.id}">${employee.name} · ${employee.role}</option>`)
     .join("");
 }
 
-function createDirectedTask(employeeId, formData) {
+function createDirectedTask(employeeId, formData, extra = {}) {
   const title = String(formData.get("title") ?? "").trim();
-  if (!title) return;
+  if (!title) return null;
 
   const task = makeTask({
     title,
@@ -1939,6 +2331,8 @@ function createDirectedTask(employeeId, formData) {
     status: "doing",
     priority: String(formData.get("priority") ?? "medium"),
     tags: normalizeTags(String(formData.get("tags") ?? "")),
+    resultText: extra.resultText ?? "",
+    resultError: extra.resultError ?? "",
   });
 
   state.tasks.unshift(task);
@@ -1948,6 +2342,7 @@ function createDirectedTask(employeeId, formData) {
   render();
   scheduleTaskSimulation(task.id);
   showToast(`${getEmployee(employeeId).name}에게 업무를 배정했습니다.`);
+  return task;
 }
 
 function createBoardTask(formData) {
@@ -1979,10 +2374,10 @@ function makeOrchestrationTaskForm(title) {
   return formData;
 }
 
-function createOrchestrationTask(employeeId, title) {
+function createOrchestrationTask(employeeId, title, resultText = "", resultError = "") {
   const beforeCount = state.tasks.length;
-  createDirectedTask(employeeId, makeOrchestrationTaskForm(title));
-  return state.tasks.length > beforeCount ? state.tasks[0] : null;
+  const task = createDirectedTask(employeeId, makeOrchestrationTaskForm(title), { resultText, resultError });
+  return state.tasks.length > beforeCount ? task : null;
 }
 
 function applyOrchestrationUpdate(update) {
@@ -2004,6 +2399,57 @@ function rememberOrchestrationTask(task) {
   });
 }
 
+function getOrderedOrchestrationItems() {
+  return (state.orch.items ?? [])
+    .filter((item) => !item.isSummary)
+    .slice()
+    .sort((a, b) => {
+      const orderA = Number.isFinite(a.order) ? a.order : 999;
+      const orderB = Number.isFinite(b.order) ? b.order : 999;
+      return orderA - orderB;
+    });
+}
+
+function buildOrchestrationContextBefore(key) {
+  const rows = [];
+  for (const item of getOrderedOrchestrationItems()) {
+    if (item.key === key) break;
+    if (item.status === "skipped") {
+      rows.push(`- ${item.name}: 건너뜀`);
+      continue;
+    }
+    if (item.status === "done" && item.text) {
+      rows.push(`- ${item.name} / ${item.subtask}\n${item.text}`);
+    }
+    if (item.status === "error" && item.error) {
+      rows.push(`- ${item.name} / ${item.subtask}\n오류: ${item.error}`);
+    }
+  }
+  return rows.join("\n\n");
+}
+
+function buildSequentialOrchestrationPrompt(item) {
+  const context = buildOrchestrationContextBefore(item.key);
+  if (!context) return item.subtask;
+  return [
+    item.subtask,
+    "",
+    "[이전 단계 산출물]",
+    context,
+    "",
+    "위 산출물을 참고하되, 당신의 역할에 맞는 결과만 정리해 주세요.",
+  ].join("\n");
+}
+
+async function runQueuedOrchestrationItems({ onUpdate } = {}) {
+  const orderedItems = getOrderedOrchestrationItems();
+  for (const item of orderedItems) {
+    if (item.status === "review") break;
+    if (item.status !== "queued") continue;
+    await executeOrchestrationItem(item, { onUpdate });
+  }
+}
+
 async function executeOrchestrationItem(item, { onUpdate } = {}) {
   const employee = getEmployee(item.employeeId);
   if (!employee) return null;
@@ -2021,8 +2467,8 @@ async function executeOrchestrationItem(item, { onUpdate } = {}) {
   showToast(`${employee.name}: 세부 업무 처리 중…`);
 
   try {
-    const text = await requestEmployeeReply(employee, item.subtask);
-    const task = createOrchestrationTask(employee.id, item.subtask);
+    const text = await requestEmployeeReply(employee, buildSequentialOrchestrationPrompt(item));
+    const task = createOrchestrationTask(employee.id, item.subtask, text, "");
     rememberOrchestrationTask(task);
     onUpdate?.({
       phase: "done",
@@ -2043,7 +2489,7 @@ async function executeOrchestrationItem(item, { onUpdate } = {}) {
     };
   } catch (err) {
     const error = err && err.message ? err.message : String(err);
-    const task = createOrchestrationTask(employee.id, item.subtask);
+    const task = createOrchestrationTask(employee.id, item.subtask, "", error);
     rememberOrchestrationTask(task);
     onUpdate?.({
       phase: "error",
@@ -2148,14 +2594,12 @@ async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
       key: `${item.employeeId}#${index}`,
       employee,
       subtask: item.subtask,
+      order: index,
       needsReview: Boolean(item.needsReview),
     });
   });
 
-  const runnableItems = (state.orch.items ?? []).filter((item) => !item.isSummary && item.status === "queued");
-  for (const item of runnableItems) {
-    await executeOrchestrationItem(item, { onUpdate });
-  }
+  await runQueuedOrchestrationItems({ onUpdate });
 
   const result = await finishOrchestrationIfReady({ onUpdate });
   const reviewCount = (state.orch.items ?? []).filter((item) => !item.isSummary && item.status === "review").length;
@@ -2167,7 +2611,7 @@ async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
   return { ...result, plan };
 }
 
-function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = [] }) {
+function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = [], resultText = "", resultError = "" }) {
   return {
     id: `task-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
     title,
@@ -2176,6 +2620,8 @@ function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = []
     priority,
     dueDate,
     tags,
+    resultText,
+    resultError,
     createdAt: new Date().toISOString(),
   };
 }

@@ -14,14 +14,14 @@
     <link rel="stylesheet" href="./src/styles.css?v=100" />
     <link rel="stylesheet" href="./src/styles-v2.css?v=100" />
     <link rel="stylesheet" href="./src/styles-building.css?v=100" />
-      <link rel="stylesheet" href="./src/theme.css?v=100" />
+    <link rel="stylesheet" href="./src/theme.css?v=100" />
   </head>
   <body>
     <div class="game-root">
       <nav class="top-game-nav app-topbar" aria-label="게임 메뉴">
         <div class="topbar-brand">
           <div class="brand-sign-shell">
-            <div class="brand-wordmark brand-acrylic-panel topbar-wordmark" aria-label="HA:YEON AI STUDIO">
+            <div class="brand-wordmark brand-acrylic-panel topbar-wordmark" aria-label="HA:YEON AI STUDIO" role="button" tabindex="0" title="내 사원증">
               <span class="brand-bolt bolt-tl" aria-hidden="true"></span>
               <span class="brand-bolt bolt-tr" aria-hidden="true"></span>
               <span class="brand-bolt bolt-bl" aria-hidden="true"></span>
@@ -37,15 +37,17 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="nav-button orchestration-nav-button compact-icon-button" id="openOrchestrationButton" type="button" aria-label="전 직원에게 지시" title="전 직원에게 지시">
-            <span aria-hidden="true">🧭</span>
-          </button>
+          <button class="nav-button org-nav-button compact-icon-button" id="openOrgChartButton" type="button" aria-label="조직도 열기" title="조직도">▦</button>
           <button class="nav-button task-nav-button compact-icon-button" id="openTaskBoardButton" type="button" aria-label="할 일판 열기" title="할 일판">
-            <span aria-hidden="true">📋</span>
+            <span aria-hidden="true">▤</span>
             <strong id="taskPillCount">0</strong>
           </button>
           <button class="nav-button dashboard-nav-button compact-icon-button" type="button" aria-label="건물 보기" title="건물 보기">🏢</button>
           <button class="nav-button fullscreen-nav-button compact-icon-button" id="fullscreenButton" type="button" aria-label="전체화면" title="전체화면">⛶</button>
+          <button class="nav-button theme-nav-button compact-icon-button" id="themeToggleButton" type="button" aria-label="테마 전환" title="테마">◐</button>
+          <button class="nav-button orchestration-nav-button compact-icon-button primary" id="openOrchestrationButton" type="button" aria-label="전 직원에게 지시" title="전 직원에게 지시">
+            <span aria-hidden="true">＋</span>
+          </button>
           <button class="nav-button reset-button compact-icon-button" id="resetDataButton" type="button" aria-label="샘플 데이터 초기화" title="초기화">↻</button>
         </div>
       </nav>
@@ -134,6 +136,15 @@
       </form>
       <div class="kanban-board" id="kanbanBoard"></div>
     </aside>
+
+    <div class="task-detail-backdrop is-hidden" id="taskDetailBackdrop"></div>
+    <section class="task-detail-modal is-hidden" id="taskDetailModal" aria-labelledby="taskDetailTitle" aria-hidden="true"></section>
+
+    <div class="org-chart-backdrop is-hidden" id="orgChartBackdrop"></div>
+    <section class="org-chart-panel is-hidden" id="orgChartPanel" aria-labelledby="orgChartTitle" aria-hidden="true"></section>
+
+    <div class="staff-card-backdrop is-hidden" id="staffCardBackdrop"></div>
+    <section class="staff-card-modal is-hidden" id="staffCardModal" aria-labelledby="staffCardTitle" aria-hidden="true"></section>
 
     <div class="orchestration-backdrop is-hidden" id="orchestrationBackdrop"></div>
     <section class="orchestration-panel is-hidden" id="orchestrationPanel" aria-labelledby="orchestrationTitle" aria-hidden="true">
