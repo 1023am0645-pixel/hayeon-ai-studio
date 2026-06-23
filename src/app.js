@@ -70,6 +70,9 @@ const escapeHtml = (value) =>
     return entities[char];
   });
 
+const uiThemeKey = "hayeon-ui-theme";
+const uiThemes = ["aurora", "light", "dark"];
+const boardFilters = ["all", "todo", "doing", "review", "done"];
 let state = loadState();
 let bubbleTick = 0;
 const pendingTimers = new Map();
@@ -77,9 +80,6 @@ const failedAvatarSrcs = new Set();
 const orchestrationUi = {
   isRunning: false,
 };
-const uiThemeKey = "hayeon-ui-theme";
-const uiThemes = ["aurora", "light", "dark"];
-const boardFilters = ["all", "todo", "doing", "review", "done"];
 
 boot();
 
