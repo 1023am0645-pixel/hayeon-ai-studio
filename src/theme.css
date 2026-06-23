@@ -1455,13 +1455,13 @@ html[data-theme] body.v2-active .staff-card-modal .staff-id-photo {
 }
 
 html[data-theme] body.v2-active .staff-card-modal .staff-id-photo img {
-  width: 138% !important;
-  height: 138% !important;
-  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
   object-fit: cover !important;
-  object-position: center 12% !important;
-  transform: translate(-13%, -7%) !important;
-  transform-origin: top center !important;
+  object-position: center 18% !important;
+  transform: none !important;
+  transform-origin: center center !important;
 }
 
 html[data-theme] body.v2-active .org-ceo-photo,
@@ -1487,12 +1487,12 @@ html[data-theme] body.v2-active .org-tree-emp-av {
 }
 
 html[data-theme] body.v2-active .org-ceo-photo img {
-  width: 138% !important;
-  height: 138% !important;
-  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
   object-fit: cover !important;
-  object-position: center 12% !important;
-  transform: translate(-13%, -7%) !important;
+  object-position: center 25% !important;
+  transform: none !important;
 }
 
 html[data-theme] body.v2-active .org-employee-avatar .avatar-image-wrap.has-image,
