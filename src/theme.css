@@ -1417,3 +1417,114 @@ html[data-theme] body.v2-active .org-tree-none{ font-size: 11px; color: var(--ui
     max-width: 100% !important;
   }
 }
+
+/* ============================================================
+   Portrait crops for staff cards and org charts
+   Keep full-body sprites in building/floor views; crop only profile frames.
+   ============================================================ */
+html[data-theme] body.v2-active .detail-avatar-wrap {
+  display: grid !important;
+  place-items: center !important;
+}
+
+html[data-theme] body.v2-active .detail-avatar-wrap .staff-id-photo {
+  width: 96px !important;
+  height: 118px !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  background:
+    linear-gradient(180deg, rgba(255, 250, 236, 0.94), rgba(232, 210, 184, 0.86)) !important;
+}
+
+html[data-theme] body.v2-active .detail-avatar-wrap .staff-id-photo-image {
+  position: absolute !important;
+  left: 50% !important;
+  top: -7% !important;
+  bottom: auto !important;
+  width: 168% !important;
+  height: auto !important;
+  max-width: none !important;
+  transform: translateX(-50%) !important;
+  transform-origin: top center !important;
+  object-fit: contain !important;
+  object-position: center top !important;
+}
+
+html[data-theme] body.v2-active .staff-card-modal .staff-id-photo {
+  overflow: hidden !important;
+}
+
+html[data-theme] body.v2-active .staff-card-modal .staff-id-photo img {
+  width: 138% !important;
+  height: 138% !important;
+  max-width: none !important;
+  object-fit: cover !important;
+  object-position: center 12% !important;
+  transform: translate(-13%, -7%) !important;
+  transform-origin: top center !important;
+}
+
+html[data-theme] body.v2-active .org-ceo-photo,
+html[data-theme] body.v2-active .org-employee-avatar,
+html[data-theme] body.v2-active .org-tree-emp-av {
+  overflow: hidden !important;
+  background:
+    linear-gradient(180deg, rgba(255, 251, 240, 0.9), rgba(230, 213, 192, 0.72)) !important;
+}
+
+html[data-theme] body.v2-active .org-employee-avatar {
+  width: 58px !important;
+  height: 58px !important;
+  border-radius: 18px !important;
+  place-items: stretch !important;
+}
+
+html[data-theme] body.v2-active .org-tree-emp-av {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 14px !important;
+  place-items: stretch !important;
+}
+
+html[data-theme] body.v2-active .org-ceo-photo img {
+  width: 138% !important;
+  height: 138% !important;
+  max-width: none !important;
+  object-fit: cover !important;
+  object-position: center 12% !important;
+  transform: translate(-13%, -7%) !important;
+}
+
+html[data-theme] body.v2-active .org-employee-avatar .avatar-image-wrap.has-image,
+html[data-theme] body.v2-active .org-tree-emp-av .avatar-image-wrap.has-image {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  overflow: hidden !important;
+}
+
+html[data-theme] body.v2-active .org-employee-avatar .avatar-image-wrap.has-image .agent-avatar-image,
+html[data-theme] body.v2-active .org-tree-emp-av .avatar-image-wrap.has-image .agent-avatar-image {
+  position: absolute !important;
+  left: 50% !important;
+  top: -12% !important;
+  bottom: auto !important;
+  display: block !important;
+  width: auto !important;
+  height: 172% !important;
+  max-width: none !important;
+  max-height: none !important;
+  transform: translateX(-50%) !important;
+  transform-origin: top center !important;
+  object-fit: contain !important;
+  object-position: center top !important;
+  filter: none !important;
+}
+
+html[data-theme] body.v2-active .org-employee-avatar .agent-avatar-missing,
+html[data-theme] body.v2-active .org-tree-emp-av .agent-avatar-missing {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit !important;
+}
