@@ -53,7 +53,6 @@ const refs = {
   orchestrationDetailContent: $("#orchestrationDetailContent"),
   closeOrchestrationDetailButton: $("#closeOrchestrationDetailButton"),
   taskPillCount: $("#taskPillCount"),
-  resetDataButton: $("#resetDataButton"),
   toastStack: $("#toastStack"),
 };
 
@@ -69,6 +68,53 @@ const escapeHtml = (value) =>
     };
     return entities[char];
   });
+
+function getLucideIcon(name, className = "") {
+  const icons = {
+    building2: `
+      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"></path>
+      <path d="M6 12H4a2 2 0 0 0-2 2v8"></path>
+      <path d="M18 9h2a2 2 0 0 1 2 2v11"></path>
+      <path d="M10 6h4"></path>
+      <path d="M10 10h4"></path>
+      <path d="M10 14h4"></path>
+      <path d="M10 18h4"></path>
+    `,
+    maximize2: `
+      <path d="M15 3h6v6"></path>
+      <path d="m21 3-7 7"></path>
+      <path d="M9 21H3v-6"></path>
+      <path d="m3 21 7-7"></path>
+    `,
+    minimize2: `
+      <path d="M4 14h6v6"></path>
+      <path d="m10 14-7 7"></path>
+      <path d="M20 10h-6V4"></path>
+      <path d="m14 10 7-7"></path>
+    `,
+    send: `
+      <path d="m22 2-7 20-4-9-9-4Z"></path>
+      <path d="M22 2 11 13"></path>
+    `,
+    loaderCircle: `
+      <path d="M21 12a9 9 0 1 1-6.2-8.56"></path>
+    `,
+    triangleAlert: `
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path>
+      <path d="M12 9v4"></path>
+      <path d="M12 17h.01"></path>
+    `,
+    check: `
+      <path d="M20 6 9 17l-5-5"></path>
+    `,
+  };
+  const body = icons[name] ?? icons.send;
+  return `
+    <svg class="lucide-icon ${className}" aria-hidden="true" viewBox="0 0 24 24">
+      ${body}
+    </svg>
+  `;
+}
 
 const uiThemeKey = "hayeon-ui-theme";
 const uiThemes = ["aurora", "light", "dark"];
@@ -240,7 +286,7 @@ function setupViewContainers() {
   refs.buildingView.setAttribute("aria-label", "2.5D 건물형 HA:YEON AI STUDIO");
   refs.workspace.insertBefore(refs.buildingView, refs.floorDetailView);
   refs.floorDetailView.classList.add("floor-detail-view");
-  refs.backToBuildingButton.textContent = "🏢";
+  refs.backToBuildingButton.innerHTML = getLucideIcon("building2");
   refs.backToBuildingButton.setAttribute("aria-label", "2.5D 건물 메인으로 돌아가기");
   refs.backToBuildingButton.setAttribute("title", "건물 보기");
 }
@@ -442,17 +488,6 @@ function bindEvents() {
   refs.orchestrationResults.addEventListener("keydown", handleOrchestrationDetailKeydown);
   refs.closeOrchestrationDetailButton.addEventListener("click", closeOrchestrationDetail);
 
-  refs.resetDataButton.addEventListener("click", () => {
-    const ok = window.confirm("샘플 데이터로 초기화할까요? 지금까지 만든 업무는 지워집니다.");
-    if (!ok) return;
-    pendingTimers.forEach((timerId) => clearTimeout(timerId));
-    pendingTimers.clear();
-    state = getInitialState();
-    saveState();
-    fillAssigneeOptions();
-    render();
-    showToast("샘플 데이터로 초기화했습니다.");
-  });
 }
 
 function openTaskForm() {
@@ -513,7 +548,7 @@ function getFullscreenTarget() {
 
 function updateFullscreenButton() {
   const isExpanded = Boolean(document.fullscreenElement) || document.body.classList.contains("is-app-expanded");
-  refs.fullscreenButton.textContent = isExpanded ? "↙" : "⛶";
+  refs.fullscreenButton.innerHTML = getLucideIcon(isExpanded ? "minimize2" : "maximize2");
   refs.fullscreenButton.setAttribute("aria-label", isExpanded ? "전체화면 닫기" : "전체화면");
   refs.fullscreenButton.setAttribute("title", isExpanded ? "전체화면 닫기" : "전체화면");
   refs.fullscreenButton.setAttribute("aria-pressed", String(isExpanded));
@@ -999,7 +1034,7 @@ function renderOrchestrationBadge() {
     refs.openOrchestrationButton.classList.add("has-orch-progress");
     refs.openOrchestrationButton.classList.remove("is-complete");
     refs.openOrchestrationButton.innerHTML = `
-      <span aria-hidden="true">🛠</span>
+      ${getLucideIcon("loaderCircle", "is-spinning")}
       <strong class="orch-nav-count">${doneCount}/${Math.max(totalCount, 1)}</strong>
     `;
     refs.openOrchestrationButton.setAttribute("aria-label", `오케스트레이션 진행 ${doneCount}/${Math.max(totalCount, 1)}`);
@@ -1011,7 +1046,7 @@ function renderOrchestrationBadge() {
     refs.openOrchestrationButton.classList.add("has-orch-progress");
     refs.openOrchestrationButton.classList.remove("is-complete");
     refs.openOrchestrationButton.innerHTML = `
-      <span aria-hidden="true">⚠</span>
+      ${getLucideIcon("triangleAlert")}
       <strong class="orch-nav-count">${reviewCount}</strong>
     `;
     refs.openOrchestrationButton.setAttribute("aria-label", `오케스트레이션 검토 대기 ${reviewCount}건`);
@@ -1021,14 +1056,14 @@ function renderOrchestrationBadge() {
 
   if (totalCount || state.orch.summary || state.orch.summaryError) {
     refs.openOrchestrationButton.classList.add("has-orch-progress", "is-complete");
-    refs.openOrchestrationButton.innerHTML = `<span aria-hidden="true">✓</span>`;
+    refs.openOrchestrationButton.innerHTML = getLucideIcon("check");
     refs.openOrchestrationButton.setAttribute("aria-label", "오케스트레이션 결과 보기");
     refs.openOrchestrationButton.setAttribute("title", "오케스트레이션 결과 보기");
     return;
   }
 
   refs.openOrchestrationButton.classList.remove("has-orch-progress", "is-complete");
-  refs.openOrchestrationButton.innerHTML = `<span aria-hidden="true">＋</span>`;
+  refs.openOrchestrationButton.innerHTML = getLucideIcon("send");
   refs.openOrchestrationButton.setAttribute("aria-label", "전 직원에게 지시");
   refs.openOrchestrationButton.setAttribute("title", "전 직원에게 지시");
 }

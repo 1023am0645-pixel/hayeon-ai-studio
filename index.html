@@ -11,10 +11,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" />
-    <link rel="stylesheet" href="./src/styles.css?v=101" />
-    <link rel="stylesheet" href="./src/styles-v2.css?v=101" />
-    <link rel="stylesheet" href="./src/styles-building.css?v=101" />
-    <link rel="stylesheet" href="./src/theme.css?v=101" />
+    <link rel="stylesheet" href="./src/styles.css?v=102" />
+    <link rel="stylesheet" href="./src/styles-v2.css?v=102" />
+    <link rel="stylesheet" href="./src/styles-building.css?v=102" />
+    <link rel="stylesheet" href="./src/theme.css?v=102" />
   </head>
   <body>
     <div class="game-root">
@@ -37,18 +37,64 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="nav-button org-nav-button compact-icon-button" id="openOrgChartButton" type="button" aria-label="조직도 열기" title="조직도">▦</button>
+          <button class="nav-button org-nav-button compact-icon-button" id="openOrgChartButton" type="button" aria-label="조직도 열기" title="조직도">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="9" y="2" width="6" height="6" rx="1.5"></rect>
+              <rect x="3" y="16" width="6" height="6" rx="1.5"></rect>
+              <rect x="15" y="16" width="6" height="6" rx="1.5"></rect>
+              <path d="M12 8v4"></path>
+              <path d="M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
           <button class="nav-button task-nav-button compact-icon-button" id="openTaskBoardButton" type="button" aria-label="할 일판 열기" title="할 일판">
-            <span aria-hidden="true">▤</span>
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="8" y="2" width="8" height="4" rx="1"></rect>
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <path d="M9 12h6"></path>
+              <path d="M9 17h6"></path>
+              <path d="M7 12h.01"></path>
+              <path d="M7 17h.01"></path>
+            </svg>
             <strong id="taskPillCount">0</strong>
           </button>
-          <button class="nav-button dashboard-nav-button compact-icon-button" type="button" aria-label="건물 보기" title="건물 보기">🏢</button>
-          <button class="nav-button fullscreen-nav-button compact-icon-button" id="fullscreenButton" type="button" aria-label="전체화면" title="전체화면">⛶</button>
-          <button class="nav-button theme-nav-button compact-icon-button" id="themeToggleButton" type="button" aria-label="테마 전환" title="테마">◐</button>
-          <button class="nav-button orchestration-nav-button compact-icon-button primary" id="openOrchestrationButton" type="button" aria-label="전 직원에게 지시" title="전 직원에게 지시">
-            <span aria-hidden="true">＋</span>
+          <button class="nav-button dashboard-nav-button compact-icon-button" type="button" aria-label="건물 보기" title="건물 보기">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"></path>
+              <path d="M6 12H4a2 2 0 0 0-2 2v8"></path>
+              <path d="M18 9h2a2 2 0 0 1 2 2v11"></path>
+              <path d="M10 6h4"></path>
+              <path d="M10 10h4"></path>
+              <path d="M10 14h4"></path>
+              <path d="M10 18h4"></path>
+            </svg>
           </button>
-          <button class="nav-button reset-button compact-icon-button" id="resetDataButton" type="button" aria-label="샘플 데이터 초기화" title="초기화">↻</button>
+          <button class="nav-button fullscreen-nav-button compact-icon-button" id="fullscreenButton" type="button" aria-label="전체화면" title="전체화면">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M15 3h6v6"></path>
+              <path d="m21 3-7 7"></path>
+              <path d="M9 21H3v-6"></path>
+              <path d="m3 21 7-7"></path>
+            </svg>
+          </button>
+          <button class="nav-button theme-nav-button compact-icon-button" id="themeToggleButton" type="button" aria-label="테마 전환" title="테마">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2"></path>
+              <path d="M12 20v2"></path>
+              <path d="m4.93 4.93 1.41 1.41"></path>
+              <path d="m17.66 17.66 1.41 1.41"></path>
+              <path d="M2 12h2"></path>
+              <path d="M20 12h2"></path>
+              <path d="m6.34 17.66-1.41 1.41"></path>
+              <path d="m19.07 4.93-1.41 1.41"></path>
+            </svg>
+          </button>
+          <button class="nav-button orchestration-nav-button compact-icon-button primary" id="openOrchestrationButton" type="button" aria-label="전 직원에게 지시" title="전 직원에게 지시">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="m22 2-7 20-4-9-9-4Z"></path>
+              <path d="M22 2 11 13"></path>
+            </svg>
+          </button>
         </div>
       </nav>
 
@@ -181,8 +227,8 @@
 
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./src/data/office-data.js?v=101"></script>
-    <script src="./src/services/ai-adapter.js?v=101"></script>
-    <script src="./src/app.js?v=101"></script>
+    <script src="./src/data/office-data.js?v=102"></script>
+    <script src="./src/services/ai-adapter.js?v=102"></script>
+    <script src="./src/app.js?v=102"></script>
   </body>
 </html>
