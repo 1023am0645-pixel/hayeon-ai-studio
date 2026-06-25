@@ -33,6 +33,9 @@ const refs = {
   openTaskBoardButton: $("#openTaskBoardButton"),
   closeTaskBoardButton: $("#closeTaskBoardButton"),
   openOrgChartButton: $("#openOrgChartButton"),
+  openDashboardButton: $("#openDashboardButton"),
+  dashboardBackdrop: $("#dashboardBackdrop"),
+  dashboardPanel: $("#dashboardPanel"),
   themeToggleButton: $("#themeToggleButton"),
   fullscreenButton: $("#fullscreenButton"),
   openOrchestrationButton: $("#openOrchestrationButton"),
@@ -313,7 +316,7 @@ function bindEvents() {
         state.detailMode = "summary";
         saveState();
         render();
-      }, 360);
+      }, 520);
       return;
     }
 
@@ -454,6 +457,21 @@ function bindEvents() {
   });
 
   refs.openOrgChartButton.addEventListener("click", openOrgChartPanel);
+  if (refs.openDashboardButton) refs.openDashboardButton.addEventListener("click", openDashboardPanel);
+  if (refs.dashboardBackdrop) refs.dashboardBackdrop.addEventListener("click", closeDashboardPanel);
+  if (refs.dashboardPanel) {
+    refs.dashboardPanel.addEventListener("click", (event) => {
+      if (event.target.closest('[data-dash-action="close"]')) { closeDashboardPanel(); return; }
+      const empBtn = event.target.closest("[data-dash-employee-id]");
+      if (empBtn) {
+        state.selectedEmployeeId = empBtn.dataset.dashEmployeeId;
+        state.detailMode = "summary"; saveState(); render(); closeDashboardPanel();
+      }
+    });
+    refs.dashboardPanel.addEventListener("input", (event) => {
+      if (event.target.id === "dashSearch") { dashSearchQuery = event.target.value; renderDashboardEmployeeList(); }
+    });
+  }
   refs.themeToggleButton.addEventListener("click", cycleTheme);
   document.querySelector(".topbar-wordmark")?.addEventListener("click", openStaffCardModal);
   document.querySelector(".topbar-wordmark")?.addEventListener("keydown", (event) => {
@@ -2278,6 +2296,88 @@ function downloadTaskDocument(task) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+let dashSearchQuery = "";
+
+function openDashboardPanel() {
+  dashSearchQuery = "";
+  renderDashboardPanel();
+  refs.dashboardBackdrop.classList.remove("is-hidden");
+  refs.dashboardPanel.classList.remove("is-hidden");
+  refs.dashboardPanel.setAttribute("aria-hidden", "false");
+}
+
+function closeDashboardPanel() {
+  refs.dashboardBackdrop.classList.add("is-hidden");
+  refs.dashboardPanel.classList.add("is-hidden");
+  refs.dashboardPanel.setAttribute("aria-hidden", "true");
+}
+
+function renderDashboardPanel() {
+  const counts = { todo: 0, doing: 0, review: 0, done: 0 };
+  state.tasks.forEach((t) => { if (counts[t.status] !== undefined) counts[t.status] += 1; });
+  const total = state.tasks.length || 1;
+
+  const contrib = state.employees
+    .map((e) => ({ e, n: state.tasks.filter((t) => t.assigneeId === e.id).length }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 6);
+  const maxN = Math.max(1, ...contrib.map((x) => x.n));
+  const contribBars = contrib.map((x) => `
+    <div class="dash-bar-row">
+      <span class="dash-bar-name">${escapeHtml(x.e.name)}</span>
+      <span class="dash-bar-track"><span class="dash-bar-fill" style="width:${Math.round((x.n / maxN) * 100)}%"></span></span>
+      <span class="dash-bar-val">${x.n}</span>
+    </div>`).join("") || '<p class="dash-empty">아직 배정된 업무가 없어요.</p>';
+
+  const feed = state.employees
+    .flatMap((e) => (e.recentCompleted ?? []).slice(0, 1).map((title) => ({ name: e.name, title })))
+    .slice(0, 6)
+    .map((f) => `<li><strong>${escapeHtml(f.name)}</strong> · ${escapeHtml(f.title)}</li>`).join("")
+    || '<li class="dash-empty">최근 완료 기록이 없어요.</li>';
+
+  refs.dashboardPanel.innerHTML = `
+    <div class="dash-header">
+      <div><p class="eyebrow">DASHBOARD</p><h2 id="dashboardTitle">성과 대시보드</h2></div>
+      <button class="detail-close" data-dash-action="close" type="button" aria-label="닫기">×</button>
+    </div>
+    <div class="dash-stats">
+      <div class="dash-stat"><span class="dash-stat-n">${counts.todo}</span><span class="dash-stat-l">할 일</span></div>
+      <div class="dash-stat"><span class="dash-stat-n">${counts.doing}</span><span class="dash-stat-l">진행 중</span></div>
+      <div class="dash-stat"><span class="dash-stat-n">${counts.review}</span><span class="dash-stat-l">검토</span></div>
+      <div class="dash-stat is-done"><span class="dash-stat-n">${counts.done}</span><span class="dash-stat-l">완료</span></div>
+    </div>
+    <div class="dash-section">
+      <h3>직원별 기여도</h3>
+      <div class="dash-bars">${contribBars}</div>
+    </div>
+    <div class="dash-section">
+      <h3>최근 활동</h3>
+      <ul class="dash-feed">${feed}</ul>
+    </div>
+    <div class="dash-section">
+      <h3>직원 검색</h3>
+      <input id="dashSearch" class="dash-search" type="text" placeholder="이름 또는 역할로 검색…" autocomplete="off" />
+      <div class="dash-emp-list" id="dashEmpList"></div>
+    </div>
+  `;
+  renderDashboardEmployeeList();
+}
+
+function renderDashboardEmployeeList() {
+  const box = document.getElementById("dashEmpList");
+  if (!box) return;
+  const q = dashSearchQuery.trim().toLowerCase();
+  const list = state.employees.filter((e) =>
+    !q || e.name.toLowerCase().includes(q) || (e.role ?? "").toLowerCase().includes(q));
+  box.innerHTML = list.slice(0, 12).map((e) => `
+    <button class="dash-emp" data-dash-employee-id="${escapeHtml(e.id)}" type="button">
+      <span class="dash-emp-av" aria-hidden="true">${renderAvatarVisual(e)}</span>
+      <span><strong>${escapeHtml(e.name)}</strong><em>${escapeHtml(e.role ?? "")}</em></span>
+      <span class="dash-emp-dot status-${(statusMeta[e.status] ?? statusMeta.idle).color}"></span>
+    </button>`).join("") || '<p class="dash-empty">검색 결과가 없어요.</p>';
 }
 
 function openOrgChartPanel() {

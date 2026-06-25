@@ -1714,14 +1714,60 @@ body.building-view-active .layered-building-agent.agent-motion-review .building-
 body.building-view-active .layered-building-agent.status-red .building-agent-avatar{
   animation: agentBreathe 3.6s ease-in-out infinite, reviewGlow 1.5s ease-in-out infinite !important;
 }
-/* 클릭 시 인사(살짝 점프 + 갸웃) */
+/* 클릭 시 인사 — 안쪽 아바타(캐릭터)에 적용해야 transform !important에 안 막힘 */
 @keyframes agentGreet{
-  0%{ transform: translateX(-50%) scale(var(--agent-scale,1)); }
-  28%{ transform: translateX(-50%) scale(calc(var(--agent-scale,1) * 1.22)) rotate(-5deg); }
-  56%{ transform: translateX(-50%) scale(calc(var(--agent-scale,1) * 1.16)) rotate(5deg); }
-  100%{ transform: translateX(-50%) scale(var(--agent-scale,1)) rotate(0deg); }
+  0%{ transform: translateY(0) scale(1) rotate(0deg); }
+  22%{ transform: translateY(-8px) scale(1.22) rotate(-7deg); }
+  45%{ transform: translateY(-3px) scale(1.16) rotate(7deg); }
+  68%{ transform: translateY(-5px) scale(1.18) rotate(-4deg); }
+  100%{ transform: translateY(0) scale(1) rotate(0deg); }
 }
-body.building-view-active .layered-building-agent.is-greeting{
-  animation: agentGreet .4s ease !important;
-  z-index: 60 !important;
+body.building-view-active .layered-building-agent.is-greeting{ z-index: 60 !important; }
+body.building-view-active .layered-building-agent.is-greeting .building-agent-avatar{
+  transform-origin: 50% 92%;
+  animation: agentGreet .55s ease !important;
 }
+
+/* ============================================================
+   3단계 — 성과 대시보드 (통계·기여도·활동피드·검색)
+   ============================================================ */
+html[data-theme] body.v2-active .dashboard-backdrop{ position:fixed; inset:0; z-index:90; background:rgba(20,28,40,.42); backdrop-filter:blur(2px); }
+html[data-theme] body.v2-active .dashboard-panel{
+  position:fixed; z-index:91; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:min(520px, calc(100vw - 24px)); max-height:88vh; overflow-y:auto;
+  background:var(--ui-surface-strong); border:1px solid var(--ui-line); border-radius:20px;
+  box-shadow:var(--ui-shadow); color:var(--ui-text); padding:20px; animation: panelIn .22s ease both;
+}
+html[data-theme] body.v2-active .dash-header{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+html[data-theme] body.v2-active .dash-header .eyebrow{ font-size:11px; font-weight:800; letter-spacing:.06em; color:var(--ui-accent); }
+html[data-theme] body.v2-active .dash-header h2{ font-size:20px; font-weight:900; color:var(--ui-text); margin:2px 0 0; }
+html[data-theme] body.v2-active .dash-stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
+html[data-theme] body.v2-active .dash-stat{ background:var(--ui-surface); border:1px solid var(--ui-line); border-radius:14px; padding:12px 8px; text-align:center; }
+html[data-theme] body.v2-active .dash-stat.is-done{ border-color:var(--ui-accent); background:var(--ui-accent-soft); }
+html[data-theme] body.v2-active .dash-stat-n{ display:block; font-size:24px; font-weight:900; color:var(--ui-text); }
+html[data-theme] body.v2-active .dash-stat.is-done .dash-stat-n{ color:var(--ui-accent); }
+html[data-theme] body.v2-active .dash-stat-l{ font-size:11.5px; font-weight:700; color:var(--ui-text-muted); }
+html[data-theme] body.v2-active .dash-section{ margin-bottom:18px; }
+html[data-theme] body.v2-active .dash-section h3{ font-size:13.5px; font-weight:800; color:var(--ui-text); margin-bottom:9px; }
+html[data-theme] body.v2-active .dash-bar-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+html[data-theme] body.v2-active .dash-bar-name{ width:64px; font-size:12.5px; font-weight:800; color:var(--ui-text); flex:0 0 auto; }
+html[data-theme] body.v2-active .dash-bar-track{ flex:1; height:10px; border-radius:999px; background:var(--ui-surface); border:1px solid var(--ui-line); overflow:hidden; }
+html[data-theme] body.v2-active .dash-bar-fill{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--ui-accent-2),var(--ui-accent)); transition:width .4s ease; }
+html[data-theme] body.v2-active .dash-bar-val{ width:20px; text-align:right; font-size:12px; font-weight:900; color:var(--ui-text-muted); }
+html[data-theme] body.v2-active .dash-feed{ list-style:none; display:flex; flex-direction:column; gap:7px; }
+html[data-theme] body.v2-active .dash-feed li{ font-size:13px; color:var(--ui-text); background:var(--ui-surface); border:1px solid var(--ui-line); border-radius:10px; padding:8px 11px; }
+html[data-theme] body.v2-active .dash-feed li strong{ color:var(--ui-accent); }
+html[data-theme] body.v2-active .dash-search{ width:100%; border:1px solid var(--ui-line); border-radius:12px; padding:11px 13px; background:var(--ui-surface); color:var(--ui-text); font-size:13.5px; margin-bottom:10px; }
+html[data-theme] body.v2-active .dash-emp-list{ display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; }
+html[data-theme] body.v2-active .dash-emp{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:1px solid var(--ui-line); background:var(--ui-surface); border-radius:11px; padding:7px 9px; cursor:pointer; }
+html[data-theme] body.v2-active .dash-emp:hover{ background:var(--ui-surface-strong); }
+html[data-theme] body.v2-active .dash-emp-av{ width:34px; height:34px; border-radius:50%; overflow:hidden; display:grid; place-items:center; flex:0 0 auto; }
+html[data-theme] body.v2-active .dash-emp-av img, html[data-theme] body.v2-active .dash-emp-av svg{ width:100%; height:100%; object-fit:cover; }
+html[data-theme] body.v2-active .dash-emp strong{ display:block; font-size:13px; color:var(--ui-text); }
+html[data-theme] body.v2-active .dash-emp em{ font-size:11px; color:var(--ui-text-muted); }
+html[data-theme] body.v2-active .dash-emp-dot{ width:9px; height:9px; border-radius:50%; margin-left:auto; flex:0 0 auto; }
+html[data-theme] body.v2-active .dash-emp-dot.status-green{ background:#34c759; } 
+html[data-theme] body.v2-active .dash-emp-dot.status-yellow{ background:#f4c64e; }
+html[data-theme] body.v2-active .dash-emp-dot.status-blue{ background:#4f9bd0; }
+html[data-theme] body.v2-active .dash-emp-dot.status-red{ background:#e24b4a; }
+html[data-theme] body.v2-active .dash-empty{ font-size:12.5px; color:var(--ui-text-muted); text-align:center; padding:14px; }
