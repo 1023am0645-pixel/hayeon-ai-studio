@@ -128,6 +128,7 @@ let bubbleTick = 0;
 let orgViewMode = "card";
 let parallaxBound = false;
 let soundOn = (typeof localStorage !== "undefined" && localStorage.getItem("hayeon-sound") === "on");
+let buildingExteriorMode = (typeof localStorage !== "undefined" && localStorage.getItem("hayeon-building-mode") === "exterior");
 const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
 const orchestrationUi = {
@@ -306,9 +307,10 @@ function setupViewContainers() {
 function bindEvents() {
   refs.buildingView.addEventListener("click", (event) => {
     const actionButton = event.target.closest("[data-building-action]");
-    if (actionButton?.dataset.buildingAction === "tasks") {
-      openTaskDrawer();
-      return;
+    if (actionButton) {
+      const buildingAction = actionButton.dataset.buildingAction;
+      if (buildingAction === "tasks") { openTaskDrawer(); return; }
+      if (buildingAction === "toggle-exterior") { toggleBuildingExterior(); return; }
     }
 
     const employeeButton = event.target.closest("[data-employee-id]");
@@ -1143,6 +1145,25 @@ function renderViewChrome() {
   }
 }
 
+function getExteriorImage() {
+  const theme = document.documentElement.getAttribute("data-theme") || "aurora";
+  const map = {
+    light: "./assets/building/exterior-light.png",
+    aurora: "./assets/building/exterior-aurora.png",
+    dark: "./assets/building/exterior-dark.png",
+  };
+  // Fall back to the light glass facade until per-theme art is added.
+  const candidate = map[theme] || "./assets/building/exterior-light.png";
+  return candidate;
+}
+
+function toggleBuildingExterior() {
+  buildingExteriorMode = !buildingExteriorMode;
+  try { localStorage.setItem("hayeon-building-mode", buildingExteriorMode ? "exterior" : "office"); } catch (err) {}
+  if (typeof playSfx === "function") playSfx(buildingExteriorMode ? "open" : "close");
+  renderBuildingView();
+}
+
 function renderBuildingView() {
   const activity = getLiveActivityItems();
   const activeActivity = activity[bubbleTick % activity.length];
@@ -1156,7 +1177,17 @@ function renderBuildingView() {
           <span>${escapeHtml(activeActivity)}</span>
         </div>
       </div>
-      <div class="building-stage building-cutaway" aria-label="층별 라이브 오피스">
+      <div class="building-stage building-cutaway${buildingExteriorMode ? " is-exterior" : ""}" aria-label="층별 라이브 오피스">
+        <button class="building-mode-toggle" type="button" data-building-action="toggle-exterior" aria-pressed="${buildingExteriorMode ? "true" : "false"}" title="외관/사무실 전환">
+          ${buildingExteriorMode ? "🏢 사무실 보기" : "🏙️ 외관 보기"}
+        </button>
+        <div class="building-exterior-view" aria-hidden="${buildingExteriorMode ? "false" : "true"}">
+          <img class="exterior-bg-image" src="${getExteriorImage()}" alt="HA:YEON AI STUDIO 본사 외관" loading="lazy" onerror="if(this.src.indexOf('exterior-light.png')===-1){this.src='./assets/building/exterior-light.png';}" />
+          <div class="exterior-logo" aria-hidden="true">
+            <strong class="ext-wordmark"><span>HA</span><i class="ext-colon"></i><span>YEON</span></strong>
+            <span class="ext-sub">AI STUDIO</span>
+          </div>
+        </div>
         <div class="building-illustration-layer" aria-hidden="true">
           <img
             class="building-bg-image"

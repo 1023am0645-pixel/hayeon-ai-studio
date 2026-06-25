@@ -1795,3 +1795,123 @@ html[data-theme] body.v2-active .dash-empty{ font-size:12.5px; color:var(--ui-te
 
 /* 사운드 버튼 켜짐 상태 */
 html[data-theme] body.v2-active .sound-nav-button.is-on .lucide-icon{ color: var(--ui-accent) !important; }
+
+/* ============================================================
+   Building exterior view + office/exterior toggle  (Claude)
+   ============================================================ */
+body.building-view-active .building-stage { position: relative; }
+
+/* toggle pill — floats top-right of the building stage */
+.building-mode-toggle {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ui-text, #2b2622);
+  background: var(--ui-surface, rgba(255, 255, 255, 0.9));
+  border: 1px solid var(--ui-line, rgba(0, 0, 0, 0.08));
+  border-radius: 999px;
+  box-shadow: 0 6px 18px var(--ui-shadow-soft, rgba(0, 0, 0, 0.12));
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+.building-mode-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 9px 24px var(--ui-shadow, rgba(0, 0, 0, 0.18));
+}
+.building-mode-toggle:active { transform: translateY(0); }
+
+/* exterior facade layer — hidden by default, shown in exterior mode */
+.building-exterior-view {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.building-exterior-view .exterior-bg-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+.building-stage.is-exterior .building-exterior-view {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+/* when exterior is on, dim/hide the cutaway + agents */
+.building-stage.is-exterior .building-illustration-layer,
+.building-stage.is-exterior .building-ambiance,
+.building-stage.is-exterior .agent-overlay-layer,
+.building-stage.is-exterior .ui-overlay-layer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+/* HA:YEON wordmark laid over the blank facade sign panel */
+.exterior-logo {
+  position: absolute;
+  left: 50%;
+  top: 57.8%;
+  transform: translate(-50%, -50%);
+  width: 17%;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+.exterior-logo .ext-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12em;
+  font-size: clamp(0.9rem, 2.0vw, 1.5rem);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: #2f3a52;
+}
+.exterior-logo .ext-colon {
+  width: 0.26em;
+  height: 0.9em;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #6aa6ff, #3f7ad1);
+  display: inline-block;
+}
+.exterior-logo .ext-sub {
+  font-size: clamp(0.42rem, 0.95vw, 0.7rem);
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: #5b6b82;
+}
+html[data-theme="aurora"] .exterior-logo .ext-wordmark { color: #7a3b22; }
+html[data-theme="aurora"] .exterior-logo .ext-colon { background: linear-gradient(180deg, #ff9d6b, #e8763f); }
+html[data-theme="aurora"] .exterior-logo .ext-sub { color: #9a5a3a; }
+html[data-theme="dark"] .exterior-logo .ext-wordmark { color: #eaf0ff; }
+html[data-theme="dark"] .exterior-logo .ext-sub { color: #aab6d4; }
+
+@media (max-width: 640px) {
+  .building-mode-toggle { top: 10px; right: 10px; padding: 6px 11px; font-size: 0.74rem; }
+  .exterior-logo { width: 22%; }
+}
