@@ -122,6 +122,7 @@ const boardFilters = ["all", "todo", "doing", "review", "done"];
 let state = loadState();
 let bubbleTick = 0;
 let orgViewMode = "card";
+let parallaxBound = false;
 const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
 const orchestrationUi = {
@@ -133,12 +134,15 @@ boot();
 function boot() {
   document.body.classList.add("v2-active");
   applyTheme(state.theme);
+  applyTimePhase();
   setupViewContainers();
   bindEvents();
+  bindParallax();
   fillAssigneeOptions();
   updateClock();
   render();
   setInterval(updateClock, 30_000);
+  setInterval(applyTimePhase, 60_000);
   setInterval(() => {
     bubbleTick += 1;
     if (state.currentView === "building") {
@@ -302,10 +306,14 @@ function bindEvents() {
 
     const employeeButton = event.target.closest("[data-employee-id]");
     if (employeeButton) {
-      state.selectedEmployeeId = employeeButton.dataset.employeeId;
-      state.detailMode = "summary";
-      saveState();
-      render();
+      const empId = employeeButton.dataset.employeeId;
+      employeeButton.classList.add("is-greeting");
+      window.setTimeout(() => {
+        state.selectedEmployeeId = empId;
+        state.detailMode = "summary";
+        saveState();
+        render();
+      }, 360);
       return;
     }
 
@@ -1151,6 +1159,14 @@ function renderBuildingView() {
           </span>
         </div>
 
+        <div class="building-ambiance" aria-hidden="true">
+          <span class="amb-sky"></span>
+          <span class="amb-stars"></span>
+          <span class="amb-clouds"><i></i><i></i><i></i></span>
+          <span class="amb-windows"></span>
+          <span class="amb-vignette"></span>
+        </div>
+
         <div class="agent-overlay-layer">
           ${orderedFloors
             .map((floor) => getFloorEmployees(floor.id).map((employee, index) => renderLayeredBuildingAgent(employee, index, floor)).join(""))
@@ -1459,6 +1475,31 @@ function getActivitySummary(title, employee) {
   if (title.includes("자동화") || title.includes("템플릿")) return "반복 업무 템플릿 정리 중";
   if (title.includes("강의") || employee.role.includes("강의")) return "신입직원 강의 흐름 정리 중";
   return title.length > 26 ? `${title.slice(0, 26)}…` : title;
+}
+
+function applyTimePhase() {
+  const h = new Date().getHours();
+  const phase = h >= 5 && h < 8 ? "dawn"
+    : h >= 8 && h < 17 ? "day"
+    : h >= 17 && h < 20 ? "dusk"
+    : "night";
+  document.body.dataset.time = phase;
+}
+
+function bindParallax() {
+  if (parallaxBound) return;
+  parallaxBound = true;
+  let raf = 0;
+  window.addEventListener("pointermove", (event) => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const x = (event.clientX / window.innerWidth - 0.5);
+      const y = (event.clientY / window.innerHeight - 0.5);
+      document.documentElement.style.setProperty("--par-x", x.toFixed(3));
+      document.documentElement.style.setProperty("--par-y", y.toFixed(3));
+    });
+  }, { passive: true });
 }
 
 function updateClock() {
