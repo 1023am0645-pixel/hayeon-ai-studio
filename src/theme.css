@@ -1771,3 +1771,27 @@ html[data-theme] body.v2-active .dash-emp-dot.status-yellow{ background:#f4c64e;
 html[data-theme] body.v2-active .dash-emp-dot.status-blue{ background:#4f9bd0; }
 html[data-theme] body.v2-active .dash-emp-dot.status-red{ background:#e24b4a; }
 html[data-theme] body.v2-active .dash-empty{ font-size:12.5px; color:var(--ui-text-muted); text-align:center; padding:14px; }
+
+/* ============================================================
+   3단계 — 온보딩 투어 + 사운드 버튼
+   ============================================================ */
+.tour-layer{ position:fixed; inset:0; z-index:9998; }
+.tour-dim{ display:none; }
+.tour-ring{
+  position:absolute; border-radius:14px; pointer-events:none; transition:all .24s ease;
+  box-shadow: 0 0 0 9999px rgba(16,22,34,.55), 0 0 0 3px var(--ui-accent, #ff8a63), 0 0 22px rgba(255,138,99,.6);
+}
+.tour-tip{
+  position:absolute; width:300px; max-width:calc(100vw - 24px);
+  background:var(--ui-surface-strong, #fff); border:1px solid var(--ui-line, rgba(0,0,0,.1));
+  border-radius:14px; box-shadow:var(--ui-shadow, 0 20px 50px rgba(0,0,0,.25)); padding:14px 16px; color:var(--ui-text, #243244);
+}
+.tour-tip p{ font-size:13.5px; line-height:1.55; margin:0 0 12px; }
+.tour-actions{ display:flex; align-items:center; gap:8px; }
+.tour-count{ font-size:11px; color:var(--ui-text-muted, #888); margin-right:auto; font-weight:700; }
+.tour-skip{ background:transparent; border:0; color:var(--ui-text-muted, #888); font-size:12.5px; cursor:pointer; font-weight:700; }
+.tour-next{ background:var(--ui-accent, #ff8a63); color:#fff; border:0; border-radius:10px; padding:8px 15px; font-weight:800; font-size:12.5px; cursor:pointer; }
+.tour-next:hover{ filter:brightness(1.05); }
+
+/* 사운드 버튼 켜짐 상태 */
+html[data-theme] body.v2-active .sound-nav-button.is-on .lucide-icon{ color: var(--ui-accent) !important; }

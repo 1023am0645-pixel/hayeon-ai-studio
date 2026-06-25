@@ -34,6 +34,7 @@ const refs = {
   closeTaskBoardButton: $("#closeTaskBoardButton"),
   openOrgChartButton: $("#openOrgChartButton"),
   openDashboardButton: $("#openDashboardButton"),
+  soundToggleButton: $("#soundToggleButton"),
   dashboardBackdrop: $("#dashboardBackdrop"),
   dashboardPanel: $("#dashboardPanel"),
   themeToggleButton: $("#themeToggleButton"),
@@ -126,6 +127,7 @@ let state = loadState();
 let bubbleTick = 0;
 let orgViewMode = "card";
 let parallaxBound = false;
+let soundOn = (typeof localStorage !== "undefined" && localStorage.getItem("hayeon-sound") === "on");
 const pendingTimers = new Map();
 const failedAvatarSrcs = new Set();
 const orchestrationUi = {
@@ -141,6 +143,8 @@ function boot() {
   setupViewContainers();
   bindEvents();
   bindParallax();
+  updateSoundButton();
+  maybeStartOnboarding();
   fillAssigneeOptions();
   updateClock();
   render();
@@ -458,6 +462,7 @@ function bindEvents() {
 
   refs.openOrgChartButton.addEventListener("click", openOrgChartPanel);
   if (refs.openDashboardButton) refs.openDashboardButton.addEventListener("click", openDashboardPanel);
+  if (refs.soundToggleButton) refs.soundToggleButton.addEventListener("click", toggleSound);
   if (refs.dashboardBackdrop) refs.dashboardBackdrop.addEventListener("click", closeDashboardPanel);
   if (refs.dashboardPanel) {
     refs.dashboardPanel.addEventListener("click", (event) => {
@@ -2130,6 +2135,7 @@ function dDayLabel(dueDate) {
 }
 
 function launchConfetti() {
+  playSfx("done");
   const layer = document.createElement("div");
   layer.className = "confetti-layer";
   const colors = ["#ff8a63", "#4f9bd0", "#7bb98b", "#f4c64e", "#b07fe0"];
@@ -2300,7 +2306,109 @@ function downloadTaskDocument(task) {
 
 let dashSearchQuery = "";
 
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { audioCtx = null; }
+  }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+}
+function playSfx(type) {
+  if (!soundOn) return;
+  ensureAudio();
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const map = { open: 520, close: 340, click: 450, pop: 760, done: 660 };
+  const freq = map[type] ?? 450;
+  const dur = type === "done" ? 0.16 : 0.08;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(freq, now);
+  if (type === "done") o.frequency.exponentialRampToValueAtTime(freq * 1.6, now + dur);
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.16, now + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(now); o.stop(now + dur + 0.03);
+}
+function updateSoundButton() {
+  const btn = refs.soundToggleButton;
+  if (!btn) return;
+  btn.classList.toggle("is-on", soundOn);
+  btn.setAttribute("aria-label", soundOn ? "소리 끄기" : "소리 켜기");
+  btn.innerHTML = soundOn
+    ? `<svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>`
+    : `<svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"></path><line x1="22" y1="9" x2="16" y2="15"></line><line x1="16" y1="9" x2="22" y2="15"></line></svg>`;
+}
+function toggleSound() {
+  soundOn = !soundOn;
+  try { localStorage.setItem("hayeon-sound", soundOn ? "on" : "off"); } catch (_) {}
+  updateSoundButton();
+  if (soundOn) { ensureAudio(); playSfx("pop"); }
+}
+
+const tourSteps = [
+  { sel: ".layered-building-agent", text: "직원을 클릭하면 업무를 지시하거나 대화할 수 있어요. 클릭하면 인사도 해요! 🙋" },
+  { sel: "#openOrchestrationButton", text: "여기! 전 직원에게 한 번 지시하면 매니저가 알아서 분배해줘요. ✨" },
+  { sel: "#openDashboardButton", text: "대시보드에서 성과·기여도·검색을 한눈에 봐요. 📊" },
+  { sel: "#openTaskBoardButton", text: "오늘의 업무 보드에서 할 일을 관리해요." },
+  { sel: "#openOrgChartButton", text: "조직도(카드형/계층형)로 회사 구조를 봐요." },
+  { sel: "#themeToggleButton", text: "테마 버튼으로 분위기(오로라/라이트/다크)를 바꿀 수 있어요." },
+];
+let tourIndex = 0;
+function maybeStartOnboarding() {
+  let seen = false;
+  try { seen = localStorage.getItem("hayeon-onboarded") === "1"; } catch (_) {}
+  if (seen) return;
+  window.setTimeout(startOnboarding, 900);
+}
+function startOnboarding() {
+  tourIndex = 0;
+  showTourStep();
+}
+function endOnboarding() {
+  try { localStorage.setItem("hayeon-onboarded", "1"); } catch (_) {}
+  const layer = document.querySelector(".tour-layer");
+  if (layer) layer.remove();
+}
+function showTourStep() {
+  const old = document.querySelector(".tour-layer");
+  if (old) old.remove();
+  if (tourIndex >= tourSteps.length) { endOnboarding(); return; }
+  const step = tourSteps[tourIndex];
+  const target = document.querySelector(step.sel);
+  const layer = document.createElement("div");
+  layer.className = "tour-layer";
+  const rect = target ? target.getBoundingClientRect() : { left: window.innerWidth / 2, top: 120, width: 0, height: 0 };
+  const ringStyle = target
+    ? `left:${rect.left - 8}px; top:${rect.top - 8}px; width:${rect.width + 16}px; height:${rect.height + 16}px;`
+    : "display:none;";
+  const tipTop = Math.min(rect.top + rect.height + 14, window.innerHeight - 160);
+  const tipLeft = Math.max(12, Math.min(rect.left, window.innerWidth - 312));
+  layer.innerHTML = `
+    <div class="tour-dim"></div>
+    <div class="tour-ring" style="${ringStyle}"></div>
+    <div class="tour-tip" style="left:${tipLeft}px; top:${tipTop}px;">
+      <p>${escapeHtml(step.text)}</p>
+      <div class="tour-actions">
+        <span class="tour-count">${tourIndex + 1} / ${tourSteps.length}</span>
+        <button class="tour-skip" data-tour="skip" type="button">건너뛰기</button>
+        <button class="tour-next" data-tour="next" type="button">${tourIndex === tourSteps.length - 1 ? "시작하기" : "다음"}</button>
+      </div>
+    </div>`;
+  layer.addEventListener("click", (event) => {
+    const act = event.target.closest("[data-tour]")?.dataset.tour;
+    if (act === "skip") { endOnboarding(); return; }
+    if (act === "next") { tourIndex += 1; showTourStep(); }
+  });
+  document.body.appendChild(layer);
+}
+
+
+
 function openDashboardPanel() {
+  playSfx("open");
   dashSearchQuery = "";
   renderDashboardPanel();
   refs.dashboardBackdrop.classList.remove("is-hidden");
