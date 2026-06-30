@@ -15,6 +15,10 @@ async function handleAgent(request, env) {
     try { if (new URL(origin).host !== host) return json({ error: "forbidden" }, 403); }
     catch { return json({ error: "bad origin" }, 403); }
   }
+  if (env.ADMIN_TOKEN) {
+    const provided = request.headers.get("X-Admin-Token") ?? "";
+    if (provided !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+  }
   let body;
   try { body = await request.json(); } catch { return json({ error: "bad json" }, 400); }
   const system = typeof body.system === "string" ? body.system.slice(0, 4000) : "";

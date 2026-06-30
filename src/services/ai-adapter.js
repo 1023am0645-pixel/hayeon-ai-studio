@@ -46,13 +46,19 @@ function createSimulatedReply(employee, message) {
   };
 }
 
+function getAdminHeaders() {
+  const token = localStorage.getItem("hayeon-admin-token") ?? "";
+  return token ? { "content-type": "application/json", "X-Admin-Token": token } : { "content-type": "application/json" };
+}
+
 async function requestEmployeeReply(employee, taskText) {
   const p = buildEmployeePrompt(employee, taskText);
   const res = await fetch("/api/agent", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: getAdminHeaders(),
     body: JSON.stringify({ system: p.system, user: p.user }),
   });
+  if (res.status === 401) throw new Error("unauthorized");
   if (!res.ok) throw new Error("agent api " + res.status);
   const data = await res.json();
   if (!data.text) throw new Error(data.error || "empty");
@@ -168,9 +174,10 @@ async function planTasks(goal, employees) {
   const system = buildPlanningSystemPrompt(employees);
   const res = await fetch("/api/agent", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: getAdminHeaders(),
     body: JSON.stringify({ system, user: cleanGoal }),
   });
+  if (res.status === 401) throw new Error("unauthorized");
   if (!res.ok) throw new Error("planner api " + res.status);
 
   const data = await res.json();
@@ -288,12 +295,13 @@ async function summarizeOrchestration(goal, results, employees) {
 
   const res = await fetch("/api/agent", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: getAdminHeaders(),
     body: JSON.stringify({
       system: summaryEmployee.prompt?.system ? `${summaryEmployee.prompt.system}\n\n${system}` : system,
       user: `목표: ${cleanGoal}\n\n${body}`,
     }),
   });
+  if (res.status === 401) throw new Error("unauthorized");
   if (!res.ok) throw new Error("summary api " + res.status);
 
   const data = await res.json();

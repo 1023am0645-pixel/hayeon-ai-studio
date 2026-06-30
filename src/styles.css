@@ -2397,3 +2397,48 @@ body::before {
   }
 }
 
+
+/* ── Admin Modal ─────────────────────────────────────────────────────── */
+.admin-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1100;
+}
+.admin-modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 1101; width: min(360px, 90vw);
+  background: var(--ui-surface, #fff); border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden;
+}
+.admin-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--ui-border, rgba(0,0,0,.08));
+}
+.admin-modal-header h2 {
+  font-size: 1rem; font-weight: 700;
+  color: var(--ui-text, #2b4a63); margin: 0;
+}
+.admin-modal-body { padding: 20px; }
+.admin-modal-desc {
+  font-size: .8rem; line-height: 1.6;
+  color: var(--ui-text-dim, #7d93a3); margin: 0 0 16px;
+}
+.admin-modal-form label {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: .8rem; font-weight: 600;
+  color: var(--ui-text, #2b4a63);
+}
+.admin-modal-form input[type="password"] {
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--ui-border, rgba(0,0,0,.15));
+  background: var(--ui-surface-strong, rgba(255,255,255,.9));
+  color: var(--ui-text, #2b4a63); font-size: .9rem;
+  outline: none;
+}
+.admin-modal-form input[type="password"]:focus {
+  border-color: var(--ui-accent, #3f7ea8);
+  box-shadow: 0 0 0 3px rgba(63,126,168,.15);
+}
+.admin-modal-form { display: flex; flex-direction: column; gap: 12px; }
+
+/* Admin button active state */
+.admin-nav-button.admin-active svg { color: #4caf50; }

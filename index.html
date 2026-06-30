@@ -11,10 +11,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" />
-    <link rel="stylesheet" href="./src/styles.css?v=106" />
-    <link rel="stylesheet" href="./src/styles-v2.css?v=106" />
-    <link rel="stylesheet" href="./src/styles-building.css?v=106" />
-    <link rel="stylesheet" href="./src/theme.css?v=106" />
+    <link rel="stylesheet" href="./src/styles.css?v=107" />
+    <link rel="stylesheet" href="./src/styles-v2.css?v=107" />
+    <link rel="stylesheet" href="./src/styles-building.css?v=107" />
+    <link rel="stylesheet" href="./src/theme.css?v=107" />
   </head>
   <body>
     <div class="game-root">
@@ -95,6 +95,12 @@
               <path d="M20 12h2"></path>
               <path d="m6.34 17.66-1.41 1.41"></path>
               <path d="m19.07 4.93-1.41 1.41"></path>
+            </svg>
+          </button>
+          <button class="nav-button admin-nav-button compact-icon-button" id="adminButton" type="button" aria-label="관리자 설정" title="관리자 로그인">
+            <svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
             </svg>
           </button>
           <button class="nav-button sound-nav-button compact-icon-button" id="soundToggleButton" type="button" aria-label="소리 켜기" title="소리">
@@ -242,10 +248,28 @@
       </section>
     </section>
 
+    <div class="admin-modal-backdrop is-hidden" id="adminModalBackdrop"></div>
+    <section class="admin-modal is-hidden" id="adminModal" aria-labelledby="adminModalTitle" aria-hidden="true">
+      <div class="admin-modal-header">
+        <h2 id="adminModalTitle">관리자 로그인</h2>
+        <button class="detail-close" id="adminModalClose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="admin-modal-body" id="adminModalBody">
+        <p class="admin-modal-desc">비밀번호를 입력하면 AI 기능이 활성화됩니다.<br>게스트는 건물/조직도 구경만 가능합니다.</p>
+        <form class="admin-modal-form" id="adminLoginForm">
+          <label>
+            관리자 비밀번호
+            <input type="password" id="adminPasswordInput" placeholder="비밀번호 입력" autocomplete="current-password" />
+          </label>
+          <button class="primary-button full-width" type="submit">로그인</button>
+        </form>
+      </div>
+    </section>
+
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./src/data/office-data.js?v=106"></script>
-    <script src="./src/services/ai-adapter.js?v=106"></script>
-    <script src="./src/app.js?v=106"></script>
+    <script src="./src/data/office-data.js?v=107"></script>
+    <script src="./src/services/ai-adapter.js?v=107"></script>
+    <script src="./src/app.js?v=107"></script>
   </body>
 </html>

@@ -46,6 +46,13 @@ const refs = {
   orgChartPanel: $("#orgChartPanel"),
   staffCardBackdrop: $("#staffCardBackdrop"),
   staffCardModal: $("#staffCardModal"),
+  adminButton: $("#adminButton"),
+  adminModalBackdrop: $("#adminModalBackdrop"),
+  adminModal: $("#adminModal"),
+  adminModalClose: $("#adminModalClose"),
+  adminLoginForm: $("#adminLoginForm"),
+  adminPasswordInput: $("#adminPasswordInput"),
+  adminModalBody: $("#adminModalBody"),
   orchestrationBackdrop: $("#orchestrationBackdrop"),
   orchestrationPanel: $("#orchestrationPanel"),
   closeOrchestrationButton: $("#closeOrchestrationButton"),
@@ -122,6 +129,7 @@ function getLucideIcon(name, className = "") {
 
 const uiThemeKey = "hayeon-ui-theme";
 const uiThemes = ["aurora", "light", "dark"];
+const adminTokenKey = "hayeon-admin-token";
 const boardFilters = ["all", "todo", "doing", "review", "done"];
 let state = loadState();
 let bubbleTick = 0;
@@ -145,6 +153,7 @@ function boot() {
   bindEvents();
   bindParallax();
   updateSoundButton();
+  updateAdminButton();
   maybeStartOnboarding();
   fillAssigneeOptions();
   updateClock();
@@ -286,6 +295,42 @@ function cycleTheme() {
   showToast(`테마: ${nextTheme}`);
 }
 
+function isAdminLoggedIn() {
+  return Boolean(localStorage.getItem(adminTokenKey));
+}
+
+function updateAdminButton() {
+  if (!refs.adminButton) return;
+  const loggedIn = isAdminLoggedIn();
+  refs.adminButton.setAttribute("title", loggedIn ? "관리자 로그아웃" : "관리자 로그인");
+  refs.adminButton.setAttribute("aria-label", loggedIn ? "관리자 로그아웃" : "관리자 로그인");
+  refs.adminButton.classList.toggle("admin-active", loggedIn);
+  refs.adminButton.innerHTML = loggedIn
+    ? `<svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path><path d="M12 16v-2" stroke-linecap="round"></path></svg>`
+    : `<svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>`;
+}
+
+function openAdminModal() {
+  const loggedIn = isAdminLoggedIn();
+  if (loggedIn) {
+    localStorage.removeItem(adminTokenKey);
+    updateAdminButton();
+    showToast("관리자 로그아웃 됐습니다.");
+    return;
+  }
+  refs.adminPasswordInput.value = "";
+  refs.adminModal.classList.remove("is-hidden");
+  refs.adminModalBackdrop.classList.remove("is-hidden");
+  refs.adminModal.removeAttribute("aria-hidden");
+  setTimeout(() => refs.adminPasswordInput.focus(), 50);
+}
+
+function closeAdminModal() {
+  refs.adminModal.classList.add("is-hidden");
+  refs.adminModalBackdrop.classList.add("is-hidden");
+  refs.adminModal.setAttribute("aria-hidden", "true");
+}
+
 function normalizeBoardFilter(filter) {
   return boardFilters.includes(filter) ? filter : "all";
 }
@@ -386,8 +431,12 @@ function bindEvents() {
         log[log.length - 1] = { role: "ai", text };
       } catch (err) {
         console.error("agent error:", err);
-        const reply = createSimulatedReply(employee, message);
-        log[log.length - 1] = { role: "ai", text: `${reply.text} (오프라인)` };
+        if (err?.message === "unauthorized") {
+          log[log.length - 1] = { role: "ai", text: "🔒 관리자만 이용할 수 있는 기능입니다. 상단 자물쇠 버튼으로 로그인하세요." };
+        } else {
+          const reply = createSimulatedReply(employee, message);
+          log[log.length - 1] = { role: "ai", text: `${reply.text} (오프라인)` };
+        }
       }
       saveState();
       renderEmployeeDetail();
@@ -512,6 +561,19 @@ function bindEvents() {
   refs.orgChartPanel.addEventListener("click", handleOrgChartClick);
   refs.staffCardBackdrop.addEventListener("click", closeStaffCardModal);
   refs.staffCardModal.addEventListener("click", handleStaffCardClick);
+
+  refs.adminButton?.addEventListener("click", openAdminModal);
+  refs.adminModalBackdrop?.addEventListener("click", closeAdminModal);
+  refs.adminModalClose?.addEventListener("click", closeAdminModal);
+  refs.adminLoginForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const password = refs.adminPasswordInput.value.trim();
+    if (!password) return;
+    localStorage.setItem(adminTokenKey, password);
+    closeAdminModal();
+    updateAdminButton();
+    showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
+  });
 
   refs.closeOrchestrationButton.addEventListener("click", () => {
     closeOrchestrationPanel();
@@ -649,13 +711,14 @@ async function handleOrchestrationSubmit(event) {
     showToast(result.pendingReview ? "검토가 필요한 업무를 확인하세요." : "분배 완료 — 결과를 확인하세요.");
   } catch (err) {
     console.error("orchestration error:", err);
-    const message = err && err.message ? err.message : String(err);
+    const isUnauth = err?.message === "unauthorized";
+    const message = isUnauth ? "관리자만 이용할 수 있는 기능입니다. 상단 자물쇠 버튼으로 로그인하세요." : (err && err.message ? err.message : String(err));
     state.orch.running = false;
     state.orch.summaryError = message;
     state.orch.completedAt = Date.now();
     saveState();
     refs.orchestrationProgress.innerHTML = `
-      <strong>실행 실패</strong>
+      <strong>${isUnauth ? "🔒 관리자 전용" : "실행 실패"}</strong>
       <span>${escapeHtml(message)}</span>
     `;
     renderOrchestrationBadge();
