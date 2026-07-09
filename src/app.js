@@ -669,6 +669,7 @@ function bindEvents() {
   refs.orchestrationTemplates?.addEventListener("click", handleOrchestrationTemplateClick);
   refs.orchestrationForm.addEventListener("submit", handleOrchestrationSubmit);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationReviewAction);
+  refs.orchestrationDetail.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationDetailClick);
@@ -1185,7 +1186,7 @@ function handleOrchestrationReviewAction(event) {
   event.stopPropagation();
 
   const itemNode = actionButton.closest("[data-orch-key]");
-  const key = itemNode?.dataset.orchKey;
+  const key = actionButton.dataset.orchKey || itemNode?.dataset.orchKey;
   if (!key) return;
 
   const action = actionButton.dataset.orchAction;
@@ -1199,6 +1200,10 @@ function handleOrchestrationReviewAction(event) {
   }
   if (action === "skip") {
     skipOrchestrationItem(key);
+    return;
+  }
+  if (action === "retry") {
+    retryOrchestrationItem(key);
   }
 }
 
@@ -1328,6 +1333,40 @@ async function skipOrchestrationItem(key) {
   }
 }
 
+async function retryOrchestrationItem(key) {
+  const item = findOrchestrationItem(key);
+  if (!item || item.status !== "error" || item.isSummary || orchestrationUi.isRunning) return;
+
+  orchestrationUi.isRunning = true;
+  state.orch.running = true;
+  state.orch.completedAt = 0;
+  state.orch.summary = "";
+  state.orch.summaryError = "";
+  item.status = "queued";
+  item.phase = "queued";
+  item.text = "";
+  item.error = "";
+  item.taskId = "";
+  saveState();
+  syncRemoteOrchestrationRun({ status: "running", summary: "", summaryError: "", completedAt: null });
+  syncRemoteOrchestrationItem(item);
+  renderOrchestrationProgress();
+  renderOrchestrationBadge();
+  closeOrchestrationDetail();
+  showToast(`${item.name} 업무를 다시 실행합니다.`);
+
+  try {
+    await executeOrchestrationItem(item, { onUpdate: applyOrchestrationUpdate });
+    await runQueuedOrchestrationItems({ onUpdate: applyOrchestrationUpdate });
+    const result = await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
+    renderOrchestrationProgress(result);
+    renderOrchestrationResults(result);
+  } finally {
+    orchestrationUi.isRunning = false;
+    renderOrchestrationBadge();
+  }
+}
+
 function openOrchestrationDetail(key) {
   const item = findOrchestrationItem(key);
   if (!item) return;
@@ -1342,6 +1381,9 @@ function openOrchestrationDetail(key) {
   };
   const statusClass = String(item.status || "queued").replace(/[^a-z0-9-]/gi, "-");
   const answer = item.error || item.text || "아직 결과가 도착하지 않았습니다.";
+  const retryAction = item.status === "error" && !item.isSummary
+    ? `<button type="button" data-orch-action="retry" data-orch-key="${escapeHtml(key)}">재시도</button>`
+    : "";
   refs.orchestrationDetailContent.innerHTML = `
     <div class="orch-detail-meta">
       <span class="orch-detail-status is-${escapeHtml(statusClass)}">${escapeHtml(statusLabels[item.status] ?? "진행")}</span>
@@ -1356,6 +1398,7 @@ function openOrchestrationDetail(key) {
         <p>${escapeHtml(answer)}</p>
       </section>
       <div class="orch-detail-actions">
+        ${retryAction}
         <button type="button" data-orch-artifact-action="copy-item" data-orch-key="${escapeHtml(key)}">결과 복사</button>
         <button type="button" data-orch-artifact-action="download-item" data-orch-key="${escapeHtml(key)}">Markdown 저장</button>
       </div>
@@ -1398,6 +1441,13 @@ function renderOrchestrationProgress(result = null) {
         </div>
       `
       : "";
+    const retryActions = item.status === "error" && !item.isSummary
+      ? `
+        <div class="orch-review-actions orch-retry-actions" aria-label="${escapeHtml(item.name)} 오류 복구 액션">
+          <button type="button" data-orch-action="retry">재시도</button>
+        </div>
+      `
+      : "";
     return `
       <li
         class="orch-progress-item is-${escapeHtml(statusClass)} ${item.isSummary ? "is-summary" : ""}"
@@ -1409,6 +1459,7 @@ function renderOrchestrationProgress(result = null) {
         <strong>${escapeHtml(item.name)}</strong>
         <em>${escapeHtml(item.subtask ?? "")}</em>
         ${reviewActions}
+        ${retryActions}
       </li>
     `;
   }).join("");
@@ -1424,8 +1475,8 @@ function renderOrchestrationProgress(result = null) {
 
   if (result) {
     refs.orchestrationProgress.innerHTML = `
-      <strong>분배 완료</strong>
-      <span>${result.tasks.length}개 업무가 할 일판에 등록되었습니다.</span>
+      <strong>${errorCount ? "오류 확인 필요" : "분배 완료"}</strong>
+      <span>${result.tasks.length}개 업무가 할 일판에 등록되었습니다.${errorCount ? ` 오류 ${errorCount}개는 재시도할 수 있습니다.` : ""}</span>
       ${progressRows ? `<ul>${progressRows}</ul>` : ""}
     `;
     return;

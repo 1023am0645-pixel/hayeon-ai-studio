@@ -6388,6 +6388,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   transform: translateY(-1px);
 }
 
+.orch-retry-actions button {
+  color: #7c2b1e;
+  background: rgba(255, 238, 231, 0.88);
+  border-color: rgba(196, 91, 72, 0.28);
+}
+
+.orch-retry-actions button:hover,
+.orch-retry-actions button:focus-visible {
+  background: rgba(255, 222, 213, 0.96);
+  border-color: rgba(196, 91, 72, 0.46);
+}
+
 .orchestration-results {
   display: grid;
   gap: 10px;
