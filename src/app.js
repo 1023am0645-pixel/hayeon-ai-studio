@@ -614,6 +614,8 @@ function bindEvents() {
 
   refs.orchestrationForm.addEventListener("submit", handleOrchestrationSubmit);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationReviewAction);
+  refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
+  refs.orchestrationDetail.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationProgress.addEventListener("keydown", handleOrchestrationDetailKeydown);
@@ -1129,6 +1131,51 @@ function handleOrchestrationDetailKeydown(event) {
   openOrchestrationDetail(itemNode.dataset.orchKey);
 }
 
+async function handleOrchestrationArtifactAction(event) {
+  const actionButton = event.target.closest("[data-orch-artifact-action]");
+  if (!actionButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const action = actionButton.dataset.orchArtifactAction;
+  const key = actionButton.dataset.orchKey || refs.orchestrationDetail.dataset.orchKey || "";
+  const result = buildStoredOrchestrationResult();
+
+  if (action === "copy-run") {
+    try {
+      await copyTextToClipboard(buildOrchestrationRunMarkdown(result));
+      showToast("오케스트레이션 전체 결과를 복사했습니다.");
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 복사하지 못했습니다.");
+    }
+    return;
+  }
+
+  if (action === "download-run") {
+    downloadTextFile(makeOrchestrationFilename(result.goal || "orchestration"), buildOrchestrationRunMarkdown(result));
+    showToast("오케스트레이션 결과 문서를 다운로드했습니다.");
+    return;
+  }
+
+  const item = findOrchestrationItem(key);
+  if (!item) return;
+
+  if (action === "copy-item") {
+    try {
+      await copyTextToClipboard(buildOrchestrationItemMarkdown(item));
+      showToast(`${item.name || "직원"} 산출물을 복사했습니다.`);
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 복사하지 못했습니다.");
+    }
+    return;
+  }
+
+  if (action === "download-item") {
+    downloadTextFile(makeOrchestrationFilename(item.subtask || item.name || "agent-result"), buildOrchestrationItemMarkdown(item));
+    showToast(`${item.name || "직원"} 산출물 문서를 다운로드했습니다.`);
+  }
+}
+
 function findOrchestrationItem(key) {
   return state.orch.items.find((item) => item.key === key) ?? null;
 }
@@ -1217,16 +1264,22 @@ function openOrchestrationDetail(key) {
       <span>지시</span>
       <p>${escapeHtml(item.subtask || "등록된 지시가 없습니다.")}</p>
     </section>
-    <section>
-      <span>${item.error ? "오류" : "전체 답변"}</span>
-      <p>${escapeHtml(answer)}</p>
-    </section>
+      <section>
+        <span>${item.error ? "오류" : "전체 답변"}</span>
+        <p>${escapeHtml(answer)}</p>
+      </section>
+      <div class="orch-detail-actions">
+        <button type="button" data-orch-artifact-action="copy-item" data-orch-key="${escapeHtml(key)}">결과 복사</button>
+        <button type="button" data-orch-artifact-action="download-item" data-orch-key="${escapeHtml(key)}">Markdown 저장</button>
+      </div>
   `;
+  refs.orchestrationDetail.dataset.orchKey = key;
   refs.orchestrationDetail.classList.remove("is-hidden");
 }
 
 function closeOrchestrationDetail() {
   refs.orchestrationDetail.classList.add("is-hidden");
+  refs.orchestrationDetail.removeAttribute("data-orch-key");
   refs.orchestrationDetailContent.innerHTML = "";
 }
 
@@ -1340,6 +1393,107 @@ function buildStoredOrchestrationResult() {
   };
 }
 
+function buildOrchestrationItemMarkdown(item) {
+  const employee = getEmployee(item.employeeId);
+  const statusLabel = getOrchestrationStatusLabel(item.status ?? "queued");
+  const body = item.error || item.text || "아직 저장된 결과가 없습니다.";
+  const metaLines = [
+    `- 전체 목표: ${state.orch.goal || "기록된 목표 없음"}`,
+    `- 담당: ${item.name || employee?.name || "직원"}`,
+    `- 역할: ${employee?.role || "역할 정보 없음"}`,
+    `- 상태: ${statusLabel}`,
+  ];
+  if (state.orch.remoteRunId) metaLines.push(`- 실행 ID: ${state.orch.remoteRunId}`);
+
+  return [
+    `# ${item.isSummary ? "오케스트레이션 종합 요약" : (item.subtask || "AI 직원 산출물")}`,
+    "",
+    ...metaLines,
+    "",
+    "## 지시",
+    "",
+    item.subtask || "등록된 지시가 없습니다.",
+    "",
+    item.error ? "## 오류" : "## 결과",
+    "",
+    body,
+  ].join("\n");
+}
+
+function buildOrchestrationRunMarkdown(result = buildStoredOrchestrationResult()) {
+  const lines = [
+    `# ${result.goal || "HA:YEON AI STUDIO 오케스트레이션 결과"}`,
+    "",
+    `- 실행 ID: ${state.orch.remoteRunId || "로컬 실행"}`,
+    `- 등록 업무: ${(result.tasks ?? []).length}개`,
+    `- 분배 직원: ${(result.plan ?? []).length}명`,
+    `- 완료 시각: ${state.orch.completedAt ? new Date(state.orch.completedAt).toLocaleString("ko-KR") : "진행/검토 중"}`,
+    "",
+  ];
+
+  if (result.summary || result.summaryError) {
+    lines.push("## 종합 요약", "", result.summary || result.summaryError, "");
+  }
+
+  (result.results ?? []).forEach((item, index) => {
+    lines.push(
+      `## ${index + 1}. ${item.employeeName || item.employeeId}`,
+      "",
+      `- 역할: ${item.role || "역할 정보 없음"}`,
+      `- 지시: ${item.subtask || "등록된 지시 없음"}`,
+      "",
+      item.error ? "### 오류" : "### 결과",
+      "",
+      item.error || item.text || "저장된 결과가 없습니다.",
+      "",
+    );
+  });
+
+  if (!(result.results ?? []).length) {
+    lines.push("## 결과", "", "아직 저장된 직원별 결과가 없습니다.", "");
+  }
+
+  return lines.join("\n").trimEnd() + "\n";
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function makeOrchestrationFilename(title) {
+  const cleanTitle = String(title || "orchestration")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+  return `${cleanTitle || "orchestration-result"}.md`;
+}
+
+function downloadTextFile(filename, body, type = "text/markdown;charset=utf-8") {
+  const blob = new Blob([body], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function syncOrchestrationResult(result) {
   state.orch.running = false;
   state.orch.summary = result.summary ?? "";
@@ -1404,8 +1558,14 @@ function renderOrchestrationResults(result) {
 
   refs.orchestrationResults.innerHTML = `
     <div class="orch-result-summary">
-      <strong>${escapeHtml(result.goal)}</strong>
-      <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록</span>
+      <div>
+        <strong>${escapeHtml(result.goal)}</strong>
+        <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록</span>
+      </div>
+      <div class="orch-result-summary-actions">
+        <button type="button" data-orch-artifact-action="copy-run">전체 복사</button>
+        <button type="button" data-orch-artifact-action="download-run">Markdown 저장</button>
+      </div>
     </div>
     ${summaryBlock}
     ${rows || "<p class=\"orch-empty\">선정된 직원이 없습니다.</p>"}
