@@ -75,6 +75,13 @@ async function handleAutomationRoute(request, env, url) {
       return upsertAutomationRunItem(env.AGENT_DB, runItemMatch[1], body, context.requestId);
     }
 
+    const runArtifactMatch = url.pathname.match(/^\/api\/automation\/runs\/([^/]+)\/artifacts$/);
+    if (runArtifactMatch && request.method === "POST") {
+      const body = await parseJsonBody(request, context.requestId);
+      if (body instanceof Response) return body;
+      return upsertAutomationArtifact(env.AGENT_DB, runArtifactMatch[1], body, context.requestId);
+    }
+
     const runMatch = url.pathname.match(/^\/api\/automation\/runs\/([^/]+)$/);
     if (runMatch) {
       if (request.method === "GET") {
@@ -362,6 +369,79 @@ async function upsertAutomationRunItem(db, runId, body, requestId) {
     ok: true,
     text: "",
     data: { item: { id, runId: normalizedRunId, key, employeeId, status, needsReview: Boolean(needsReview), updatedAt: now } },
+    requestId,
+  });
+}
+
+async function upsertAutomationArtifact(db, runId, body, requestId) {
+  const normalizedRunId = normalizeId(runId, 120);
+  if (!normalizedRunId) return agentError("bad_run_id", 400, requestId);
+
+  const run = await db.prepare("SELECT id FROM agent_runs WHERE id = ?").bind(normalizedRunId).first();
+  if (!run) return agentError("run_not_found", 404, requestId);
+
+  const key = normalizeId(body.id ?? body.key, 120) || crypto.randomUUID();
+  const id = `${normalizedRunId}:artifact:${key}`.slice(0, 220);
+  const itemKey = normalizeId(body.itemKey ?? body.item_key, 120);
+  const itemId = normalizeId(body.itemId ?? body.item_id, 180) || (itemKey ? `${normalizedRunId}:${itemKey}`.slice(0, 180) : null);
+  const localTaskId = normalizeId(body.taskId ?? body.task_id, 180);
+  const employeeId = normalizeId(body.employeeId ?? body.employee_id, 120);
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 500) : "";
+  if (!title) return agentError("bad_artifact", 400, requestId);
+
+  const artifactType = normalizeId(body.artifactType ?? body.artifact_type, 80) || "markdown";
+  const contentText = nullableString(body.contentText ?? body.content_text, "", 100000);
+  const fileUrl = nullableString(body.fileUrl ?? body.file_url, null, 1000);
+  const metadataInput = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+    ? { ...body.metadata, localTaskId: localTaskId || body.metadata.localTaskId }
+    : { localTaskId };
+  const metadata = stringifyMetadata(metadataInput);
+  const now = new Date().toISOString();
+
+  await db.prepare(`
+    INSERT INTO artifacts (
+      id, run_id, item_id, task_id, employee_id, title, artifact_type,
+      content_text, file_url, metadata_json, created_at, updated_at
+    )
+    VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      item_id = excluded.item_id,
+      task_id = excluded.task_id,
+      employee_id = excluded.employee_id,
+      title = excluded.title,
+      artifact_type = excluded.artifact_type,
+      content_text = excluded.content_text,
+      file_url = excluded.file_url,
+      metadata_json = excluded.metadata_json,
+      updated_at = excluded.updated_at
+  `).bind(
+    id,
+    normalizedRunId,
+    itemId,
+    employeeId,
+    title,
+    artifactType,
+    contentText,
+    fileUrl,
+    metadata,
+    now,
+    now,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      artifact: {
+        id,
+        runId: normalizedRunId,
+        itemId,
+        employeeId,
+        title,
+        artifactType,
+        updatedAt: now,
+      },
+    },
     requestId,
   });
 }

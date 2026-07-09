@@ -76,6 +76,14 @@ function upsertRunItem(runId, item) {
   });
 }
 
+function upsertArtifact(runId, artifact) {
+  if (!runId || !artifact) return Promise.resolve(null);
+  return requestAutomation(`/api/automation/runs/${encodeURIComponent(runId)}/artifacts`, {
+    method: "POST",
+    body: artifact,
+  });
+}
+
 function isStorageMissing(error) {
   return error?.code === "agent_db_missing" || error?.message === "agent_db_missing";
 }
@@ -89,6 +97,7 @@ window.HayeonAutomationStore = {
   updateRun,
   getRun,
   upsertRunItem,
+  upsertArtifact,
   isStorageMissing,
 };
 })();

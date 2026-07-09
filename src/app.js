@@ -1254,6 +1254,16 @@ function syncRemoteOrchestrationItem(item) {
   }
 
   void automationStore.upsertRunItem(state.orch.remoteRunId, serializeRemoteOrchestrationItem(item))
+    .then(() => syncRemoteOrchestrationArtifact(item))
+    .catch(handleRemoteOrchestrationSyncError);
+}
+
+function syncRemoteOrchestrationArtifact(item) {
+  if (!automationStore?.upsertArtifact || !state.orch.remoteRunId || !item || item.isSummary) {
+    return Promise.resolve(null);
+  }
+  if (item.status !== "done" || !item.text) return Promise.resolve(null);
+  return automationStore.upsertArtifact(state.orch.remoteRunId, serializeRemoteOrchestrationArtifact(item))
     .catch(handleRemoteOrchestrationSyncError);
 }
 
@@ -1288,6 +1298,32 @@ function serializeRemoteOrchestrationItem(item) {
     metadata: {
       phase: item.phase,
       taskId: item.taskId,
+    },
+  };
+}
+
+function serializeRemoteOrchestrationArtifact(item) {
+  const employee = getEmployee(item.employeeId);
+  const runId = state.orch.remoteRunId ?? "";
+  const key = item.key ?? `${item.employeeId}-${item.order ?? 0}`;
+  return {
+    id: key,
+    itemKey: key,
+    itemId: `${runId}:${key}`.slice(0, 180),
+    taskId: item.taskId ?? "",
+    employeeId: item.employeeId,
+    title: item.subtask || `${item.name || employee?.name || "직원"} 산출물`,
+    artifactType: "markdown",
+    contentText: buildOrchestrationItemMarkdown(item),
+    metadata: {
+      source: "orchestration",
+      goal: state.orch.goal ?? "",
+      status: item.status,
+      phase: item.phase,
+      employeeName: item.name || employee?.name || item.employeeId,
+      role: employee?.role ?? "",
+      localTaskId: item.taskId ?? "",
+      createdBy: "hayeon-ai-studio",
     },
   };
 }
