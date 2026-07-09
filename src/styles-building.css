@@ -6400,6 +6400,95 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   border-color: rgba(196, 91, 72, 0.46);
 }
 
+.orchestration-log {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  color: rgba(60, 38, 19, 0.78);
+  background: rgba(255, 253, 247, 0.62);
+  border: 1px solid rgba(171, 123, 57, 0.14);
+  border-radius: 16px;
+}
+
+.orch-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.orch-log-head strong {
+  color: #33210f;
+  font-size: 13px;
+}
+
+.orch-log-head span {
+  color: rgba(68, 43, 20, 0.52);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.orchestration-log ul {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.orch-log-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(171, 123, 57, 0.10);
+  border-radius: 10px;
+}
+
+.orch-log-item time {
+  color: rgba(68, 43, 20, 0.52);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.orch-log-item span {
+  color: #5a3511;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.orch-log-item p {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: rgba(47, 31, 16, 0.74);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orch-log-item.is-error,
+.orch-log-item.is-summary-error,
+.orch-log-item.is-run-error {
+  border-color: rgba(196, 91, 72, 0.24);
+  background: rgba(255, 238, 231, 0.56);
+}
+
+.orch-log-item.is-done,
+.orch-log-item.is-summary-done {
+  border-color: rgba(61, 157, 102, 0.18);
+  background: rgba(229, 251, 238, 0.48);
+}
+
+.orch-log-item.is-retry {
+  border-color: rgba(196, 139, 56, 0.28);
+  background: rgba(255, 238, 192, 0.46);
+}
+
 .orchestration-results {
   display: grid;
   gap: 10px;
@@ -6738,6 +6827,15 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 
   .orch-template-list {
     grid-template-columns: 1fr;
+  }
+
+  .orch-log-item {
+    grid-template-columns: auto 1fr;
+  }
+
+  .orch-log-item p {
+    grid-column: 1 / -1;
+    white-space: normal;
   }
 
   .orch-progress-item {

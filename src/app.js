@@ -61,6 +61,7 @@ const refs = {
   orchestrationGoal: $("#orchestrationGoal"),
   orchestrationTemplates: $("#orchestrationTemplates"),
   orchestrationProgress: $("#orchestrationProgress"),
+  orchestrationLog: $("#orchestrationLog"),
   orchestrationResults: $("#orchestrationResults"),
   orchestrationHistory: $("#orchestrationHistory"),
   refreshOrchestrationHistoryButton: $("#refreshOrchestrationHistoryButton"),
@@ -284,6 +285,7 @@ function getInitialOrchState() {
     summary: "",
     summaryError: "",
     tasks: [],
+    logs: [],
     startedAt: 0,
     completedAt: 0,
   };
@@ -298,6 +300,7 @@ function hydrateOrch(savedOrch = {}) {
     running: false,
     items: Array.isArray(savedOrch.items) ? savedOrch.items : [],
     tasks: Array.isArray(savedOrch.tasks) ? savedOrch.tasks : [],
+    logs: Array.isArray(savedOrch.logs) ? savedOrch.logs : [],
   };
 }
 
@@ -809,6 +812,11 @@ async function handleOrchestrationSubmit(event) {
     goal,
     startedAt: Date.now(),
   };
+  appendOrchestrationLog({
+    phase: "run-start",
+    name: "매니저",
+    message: "오케스트레이션 실행을 시작했습니다.",
+  });
   saveState();
   refs.orchestrationResults.innerHTML = "";
   closeOrchestrationDetail();
@@ -840,11 +848,17 @@ async function handleOrchestrationSubmit(event) {
     state.orch.running = false;
     state.orch.summaryError = message;
     state.orch.completedAt = Date.now();
+    appendOrchestrationLog({
+      phase: "run-error",
+      name: "시스템",
+      message,
+    });
     saveState();
     refs.orchestrationProgress.innerHTML = `
       <strong>${isUnauth ? "🔒 관리자 전용" : "실행 실패"}</strong>
       <span>${escapeHtml(message)}</span>
     `;
+    renderOrchestrationLog();
     renderOrchestrationBadge();
   } finally {
     orchestrationUi.isRunning = false;
@@ -1009,6 +1023,7 @@ function hydrateOrchestrationFromRemoteRun(data) {
     summaryError: run.summary_error ?? "",
     items: hydratedItems,
     tasks: restoredTasks,
+    logs: buildRestoredOrchestrationLogs(run, hydratedItems),
   };
 }
 
@@ -1041,6 +1056,107 @@ function safeParseJson(text) {
   } catch {
     return {};
   }
+}
+
+function appendOrchestrationLog({ phase = "info", key = "", name = "", message = "" } = {}) {
+  state.orch.logs = Array.isArray(state.orch.logs) ? state.orch.logs : [];
+  state.orch.logs.push({
+    id: `log-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+    at: new Date().toISOString(),
+    phase,
+    key,
+    name,
+    message,
+  });
+  state.orch.logs = state.orch.logs.slice(-80);
+}
+
+function appendOrchestrationUpdateLog(update, key, status, employeeName) {
+  appendOrchestrationLog({
+    phase: update.phase ?? status,
+    key,
+    name: employeeName,
+    message: getOrchestrationLogMessage(update, status, employeeName),
+  });
+}
+
+function getOrchestrationLogMessage(update, status, employeeName) {
+  const subtask = update.subtask ? ` · ${update.subtask}` : "";
+  const messages = {
+    queued: `${employeeName} 업무가 대기열에 등록됐습니다${subtask}`,
+    review: `${employeeName} 업무가 검토 대기 상태입니다${subtask}`,
+    start: `${employeeName} 업무 처리를 시작했습니다${subtask}`,
+    done: `${employeeName} 업무가 완료됐습니다${subtask}`,
+    error: `${employeeName} 업무에서 오류가 발생했습니다${subtask}`,
+    skipped: `${employeeName} 업무를 건너뛰었습니다${subtask}`,
+    "summary-start": "직원별 산출물 종합 요약을 시작했습니다.",
+    "summary-done": "직원별 산출물 종합 요약이 완료됐습니다.",
+    "summary-error": "종합 요약 중 오류가 발생했습니다.",
+  };
+  return messages[update.phase] ?? `${employeeName} 상태가 ${getOrchestrationStatusLabel(status)}로 변경됐습니다${subtask}`;
+}
+
+function buildRestoredOrchestrationLogs(run, items) {
+  const logs = [];
+  const restoredAt = new Date().toISOString();
+  logs.push({
+    id: `restored-${run.id ?? "run"}`,
+    at: run.updated_at || run.created_at || restoredAt,
+    phase: "restored",
+    key: "",
+    name: "저장소",
+    message: "서버 저장소에서 실행 기록을 불러왔습니다.",
+  });
+  items.forEach((item, index) => {
+    logs.push({
+      id: `restored-${item.key}-${index}`,
+      at: restoredAt,
+      phase: item.phase || item.status || "info",
+      key: item.key,
+      name: item.name,
+      message: `${item.name} · ${item.subtask || "세부 업무"} · ${getOrchestrationStatusLabel(item.status)}`,
+    });
+  });
+  return logs.slice(-80);
+}
+
+function renderOrchestrationLog() {
+  if (!refs.orchestrationLog) return;
+  const logs = Array.isArray(state.orch.logs) ? state.orch.logs : [];
+  refs.orchestrationLog.classList.toggle("is-hidden", !logs.length);
+  if (!logs.length) {
+    refs.orchestrationLog.innerHTML = "";
+    return;
+  }
+
+  const rows = logs.slice(-10).reverse().map((log) => {
+    const phaseClass = String(log.phase || "info").replace(/[^a-z0-9-]/gi, "-");
+    return `
+      <li class="orch-log-item is-${escapeHtml(phaseClass)}">
+        <time>${escapeHtml(formatOrchestrationLogTime(log.at))}</time>
+        <span>${escapeHtml(log.name || "시스템")}</span>
+        <p>${escapeHtml(log.message || "상태가 변경됐습니다.")}</p>
+      </li>
+    `;
+  }).join("");
+
+  refs.orchestrationLog.innerHTML = `
+    <div class="orch-log-head">
+      <strong>실행 로그</strong>
+      <span>최근 ${Math.min(logs.length, 10)}개</span>
+    </div>
+    <ul>${rows}</ul>
+  `;
+}
+
+function formatOrchestrationLogTime(value) {
+  const timestamp = Date.parse(value);
+  if (!timestamp) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function upsertOrchestrationItem(update) {
@@ -1085,11 +1201,13 @@ function upsertOrchestrationItem(update) {
       taskId: patch.taskId || state.orch.items[index].taskId,
       order: Number.isFinite(patch.order) ? patch.order : state.orch.items[index].order,
     };
+    appendOrchestrationUpdateLog(update, key, nextStatus, employeeName);
     syncRemoteOrchestrationItem(state.orch.items[index]);
     return;
   }
 
   state.orch.items.push(patch);
+  appendOrchestrationUpdateLog(update, key, nextStatus, employeeName);
   syncRemoteOrchestrationItem(patch);
 }
 
@@ -1302,6 +1420,12 @@ function editOrchestrationItem(key) {
   item.text = "";
   item.error = "";
   item.phase = "review";
+  appendOrchestrationLog({
+    phase: "edited",
+    key,
+    name: item.name,
+    message: `${item.name} 검토 지시문을 수정했습니다.`,
+  });
   saveState();
   syncRemoteOrchestrationItem(item);
   renderOrchestrationProgress();
@@ -1319,6 +1443,12 @@ async function skipOrchestrationItem(key) {
   item.phase = "skipped";
   item.text = "";
   item.error = "";
+  appendOrchestrationLog({
+    phase: "skipped",
+    key,
+    name: item.name,
+    message: `${item.name} 업무를 건너뛰었습니다.`,
+  });
   saveState();
   syncRemoteOrchestrationItem(item);
   renderOrchestrationProgress();
@@ -1347,6 +1477,12 @@ async function retryOrchestrationItem(key) {
   item.text = "";
   item.error = "";
   item.taskId = "";
+  appendOrchestrationLog({
+    phase: "retry",
+    key,
+    name: item.name,
+    message: `${item.name} 오류 항목을 재시도합니다.`,
+  });
   saveState();
   syncRemoteOrchestrationRun({ status: "running", summary: "", summaryError: "", completedAt: null });
   syncRemoteOrchestrationItem(item);
@@ -1414,6 +1550,7 @@ function closeOrchestrationDetail() {
 }
 
 function renderOrchestrationProgress(result = null) {
+  renderOrchestrationLog();
   const items = Array.isArray(state.orch.items) ? state.orch.items : [];
   const taskItems = items.filter((item) => !item.isSummary);
   const doneCount = taskItems.filter((item) => item.status === "done").length;
@@ -1494,6 +1631,7 @@ function renderStoredOrchestrationPanel() {
     refs.orchestrationProgress.textContent =
       "목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.";
     refs.orchestrationResults.innerHTML = "";
+    renderOrchestrationLog();
     closeOrchestrationDetail();
     return;
   }
@@ -1589,6 +1727,15 @@ function buildOrchestrationRunMarkdown(result = buildStoredOrchestrationResult()
 
   if (!(result.results ?? []).length) {
     lines.push("## 결과", "", "아직 저장된 직원별 결과가 없습니다.", "");
+  }
+
+  const logs = Array.isArray(state.orch.logs) ? state.orch.logs : [];
+  if (logs.length) {
+    lines.push("## 실행 로그", "");
+    logs.forEach((log) => {
+      lines.push(`- ${formatOrchestrationLogTime(log.at)} · ${log.name || "시스템"} · ${log.message || "상태 변경"}`);
+    });
+    lines.push("");
   }
 
   return lines.join("\n").trimEnd() + "\n";
