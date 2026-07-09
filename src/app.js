@@ -59,6 +59,7 @@ const refs = {
   closeOrchestrationButton: $("#closeOrchestrationButton"),
   orchestrationForm: $("#orchestrationForm"),
   orchestrationGoal: $("#orchestrationGoal"),
+  orchestrationTemplates: $("#orchestrationTemplates"),
   orchestrationProgress: $("#orchestrationProgress"),
   orchestrationResults: $("#orchestrationResults"),
   orchestrationHistory: $("#orchestrationHistory"),
@@ -134,6 +135,58 @@ const uiThemeKey = "hayeon-ui-theme";
 const uiThemes = ["aurora", "light", "dark"];
 const adminTokenKey = "hayeon-admin-token";
 const boardFilters = ["all", "todo", "doing", "review", "done"];
+const orchestrationTemplates = [
+  {
+    id: "lecture-prep",
+    label: "강의 준비",
+    desc: "교안·PPT·리허설",
+    goal: [
+      "다음 강의를 준비해줘.",
+      "강의 주제와 대상자를 기준으로 강의 흐름, 핵심 메시지, 실습 활동, PPT 구성, 리허설 체크리스트를 나눠서 정리해줘.",
+      "최종 결과는 바로 강의 준비 회의에 쓸 수 있게 액션 아이템 중심으로 만들어줘.",
+    ].join("\n"),
+  },
+  {
+    id: "lecture-review",
+    label: "강의 후기 정리",
+    desc: "후기·성과·아카이브",
+    goal: [
+      "최근 강의 후기를 정리해줘.",
+      "참여자 반응, 인상적인 문장, 개선점, 다음 강의에 반영할 액션, 아카이브용 요약문을 직원별로 나눠 작성해줘.",
+      "후기는 홍보 문구와 내부 회고에 둘 다 재사용할 수 있게 정리해줘.",
+    ].join("\n"),
+  },
+  {
+    id: "ax-report",
+    label: "AX 보고서",
+    desc: "성과·근거·요약",
+    goal: [
+      "AX-서포터즈 활동 보고서 초안을 만들어줘.",
+      "활동 개요, 주요 성과, 참여자 변화, 증빙 자료 체크리스트, 다음 액션, 제출용 요약문을 나눠 정리해줘.",
+      "보고서 문체는 공식 문서처럼 차분하게 작성해줘.",
+    ].join("\n"),
+  },
+  {
+    id: "app-feature",
+    label: "앱 기능 정리",
+    desc: "기획·화면·우선순위",
+    goal: [
+      "새 앱 기능을 정리해줘.",
+      "사용자 문제, 핵심 기능, 첫 화면 흐름, 필요한 데이터, 우선순위, 개발 체크리스트를 직원별 역할에 맞춰 나눠줘.",
+      "개발자가 바로 작업 단위로 볼 수 있게 구체적인 항목으로 만들어줘.",
+    ].join("\n"),
+  },
+  {
+    id: "automation-template",
+    label: "자동화 템플릿",
+    desc: "반복업무·체크리스트",
+    goal: [
+      "반복 업무 자동화 템플릿을 만들어줘.",
+      "업무 시작 조건, 입력 정보, 처리 순서, 확인 기준, 예외 상황, 결과물 양식을 정리해줘.",
+      "비슷한 업무에 반복 적용할 수 있는 운영 템플릿 형태로 만들어줘.",
+    ].join("\n"),
+  },
+];
 let state = loadState();
 let bubbleTick = 0;
 let orgViewMode = "card";
@@ -159,6 +212,7 @@ function boot() {
   updateAdminButton();
   maybeStartOnboarding();
   fillAssigneeOptions();
+  renderOrchestrationTemplates();
   updateClock();
   render();
   setInterval(updateClock, 30_000);
@@ -612,6 +666,7 @@ function bindEvents() {
     closeOrchestrationPanel();
   });
 
+  refs.orchestrationTemplates?.addEventListener("click", handleOrchestrationTemplateClick);
   refs.orchestrationForm.addEventListener("submit", handleOrchestrationSubmit);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
@@ -705,6 +760,38 @@ function closeOrchestrationPanel() {
   refs.orchestrationPanel.classList.add("is-hidden");
   refs.orchestrationBackdrop.classList.add("is-hidden");
   refs.orchestrationPanel.setAttribute("aria-hidden", "true");
+}
+
+function renderOrchestrationTemplates() {
+  if (!refs.orchestrationTemplates) return;
+  refs.orchestrationTemplates.innerHTML = `
+    <div class="orch-template-head">
+      <strong>빠른 시나리오</strong>
+      <span>누르면 목표 입력창에 자동 입력됩니다.</span>
+    </div>
+    <div class="orch-template-list">
+      ${orchestrationTemplates.map((template) => `
+        <button
+          class="orch-template-chip"
+          type="button"
+          data-orch-template-id="${escapeHtml(template.id)}"
+        >
+          <strong>${escapeHtml(template.label)}</strong>
+          <span>${escapeHtml(template.desc)}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function handleOrchestrationTemplateClick(event) {
+  const button = event.target.closest("[data-orch-template-id]");
+  if (!button || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
+  const template = orchestrationTemplates.find((item) => item.id === button.dataset.orchTemplateId);
+  if (!template) return;
+  refs.orchestrationGoal.value = template.goal;
+  refs.orchestrationGoal.focus();
+  showToast(`${template.label} 시나리오를 입력했습니다. 필요하면 수정 후 실행하세요.`);
 }
 
 async function handleOrchestrationSubmit(event) {
