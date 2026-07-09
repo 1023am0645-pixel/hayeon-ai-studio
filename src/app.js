@@ -1367,6 +1367,11 @@ async function handleOrchestrationArtifactAction(event) {
     return;
   }
 
+  if (action === "reuse-goal") {
+    reuseOrchestrationGoal(result.goal);
+    return;
+  }
+
   const item = findOrchestrationItem(key);
   if (!item) return;
 
@@ -1388,6 +1393,15 @@ async function handleOrchestrationArtifactAction(event) {
 
 function findOrchestrationItem(key) {
   return state.orch.items.find((item) => item.key === key) ?? null;
+}
+
+function reuseOrchestrationGoal(goal) {
+  const cleanGoal = String(goal ?? state.orch.goal ?? "").trim();
+  if (!cleanGoal || refs.orchestrationGoal.disabled || orchestrationUi.isRunning) return;
+  refs.orchestrationGoal.value = cleanGoal;
+  refs.orchestrationGoal.focus();
+  refs.orchestrationGoal.scrollIntoView({ behavior: "smooth", block: "center" });
+  showToast("이전 목표를 입력창에 다시 넣었습니다. 수정 후 실행하세요.");
 }
 
 async function approveOrchestrationItem(key) {
@@ -1848,6 +1862,7 @@ function renderOrchestrationResults(result) {
         <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록</span>
       </div>
       <div class="orch-result-summary-actions">
+        <button type="button" data-orch-artifact-action="reuse-goal">목표 다시 입력</button>
         <button type="button" data-orch-artifact-action="copy-run">전체 복사</button>
         <button type="button" data-orch-artifact-action="download-run">Markdown 저장</button>
       </div>

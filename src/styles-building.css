@@ -6546,6 +6546,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   transform: translateY(-1px);
 }
 
+.orch-result-summary-actions [data-orch-artifact-action="reuse-goal"] {
+  color: #2f4c38;
+  background: rgba(230, 252, 239, 0.92);
+  border-color: rgba(61, 157, 102, 0.24);
+}
+
+.orch-result-summary-actions [data-orch-artifact-action="reuse-goal"]:hover,
+.orch-result-summary-actions [data-orch-artifact-action="reuse-goal"]:focus-visible {
+  background: rgba(211, 246, 226, 0.98);
+  border-color: rgba(61, 157, 102, 0.40);
+}
+
 .orch-result-summary strong {
   color: #2d1f12;
 }
