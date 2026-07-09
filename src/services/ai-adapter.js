@@ -17,12 +17,66 @@ const aiProviderSlots = {
   },
 };
 
+const agentQualityGuides = {
+  "chief-assistant": "우선순위, 병목, 오늘 바로 처리할 순서를 먼저 판단한다. 선택지를 많이 벌리지 말고 1순위부터 제시한다.",
+  "brand-strategist": "브랜드 신뢰감, 경력 문장, 대외 표현의 톤을 점검한다. 추상 표현보다 실제 활동 근거가 드러나게 쓴다.",
+  "lecture-pd": "강의 대상, 목표, 시간 배분, 도입-전개-실습-마무리 흐름을 중심으로 설계한다.",
+  "opening-writer": "첫 1분 인사, 공감 질문, 오늘 배울 이유가 바로 전달되게 작성한다.",
+  "case-developer": "수강자가 바로 따라 할 수 있는 예시, 실습 단계, 예상 난이도와 시간을 함께 정리한다.",
+  "ppt-designer": "슬라이드 제목, 한 줄 메시지, 화면에 올릴 문구를 짧고 시각적으로 정리한다.",
+  "prompt-engineer": "교안 문장, 실습 지시문, 체크리스트를 따라 하기 쉬운 순서로 정리한다.",
+  "rehearsal-coach": "발표 시간, 전환 멘트, 막히기 쉬운 구간, 리허설 체크포인트를 점검한다.",
+  "field-manager": "현장 준비물, 장비, 링크, 파일, 당일 변수 대응을 체크리스트로 만든다.",
+  "archive-curator": "날짜, 강의명, 대상, 핵심 반응, 배운 점, 보완점을 빠짐없이 기록 형식으로 정리한다.",
+  "feedback-analyst": "반복 피드백, 강점 키워드, 개선 포인트, 다음 강의 반영사항을 분리한다.",
+  "ax-pm": "AX 공식과제/자율과제, 진행상황, 산출물, 근거 링크, 다음 마감 액션을 관리한다.",
+  "activity-recorder": "활동 날짜, 과제 유형, 산출물, 링크, 배운 점을 기록 가능한 형태로 정리한다.",
+  "report-writer": "보고서 문체로 요약, 추진 내용, 성과, 근거, 향후 계획을 정리한다.",
+  "control-bot": "전체 진행률, 누락 위험, 충돌 가능성, 다음 승인 필요 항목을 관제한다.",
+  "schedule-bot": "마감일, 선행 조건, 충돌 가능성, 오늘/이번 주 처리 순서를 정리한다.",
+  "app-planner": "사용자 흐름, 핵심 화면, 기능 우선순위, 다음 개발 단위를 구체화한다.",
+  "ux-builder": "화면 구성, 정보 구조, 버튼/입력 흐름, 접근성 개선 포인트를 제안한다.",
+  "automation-bot": "반복 업무를 입력-처리-출력-검수 단계로 나누고 자동화 가능 지점을 표시한다.",
+  "template-bot": "재사용 가능한 프롬프트/문서 템플릿 형식으로 바꾼다.",
+  "meeting-bot": "안건, 결정사항, 담당자, 후속 업무, 마감일을 회의록처럼 정리한다.",
+  "charge-bot": "업무 과부하를 낮추기 위해 쉬운 다음 행동과 휴식/전환 기준을 제안한다.",
+};
+
+function getAgentQualityGuide(employee) {
+  return agentQualityGuides[employee.id] ?? "맡은 역할에 맞춰 실제 업무에 바로 쓸 수 있는 결과와 다음 행동을 제안한다.";
+}
+
+function buildStandardReplySystem(employee) {
+  return [
+    "[직원별 업무 품질 기준]",
+    getAgentQualityGuide(employee),
+    "",
+    "[공통 응답 원칙]",
+    "- 사용자의 요청을 실제 업무 산출물로 바꾼다.",
+    "- 빈칸, [placeholder], 예시용 대괄호 문구를 만들지 않는다.",
+    "- 정보가 부족하면 '확인 필요:'로 필요한 정보만 짧게 표시한다.",
+    "- 일반론보다 지금 바로 실행할 수 있는 항목을 우선한다.",
+    "- 같은 말을 반복하지 않는다.",
+    "",
+    "[표준 출력 형식]",
+    "핵심 요약: 1문장",
+    "할 일: 2~4개 불릿",
+    "산출물: 바로 복사해 쓸 수 있는 초안 또는 구조",
+    "다음 액션: 사용자가 지금 할 1가지",
+  ].join("\n");
+}
+
 function buildEmployeePrompt(employee, taskText) {
+  const system = [
+    employee.prompt?.system ?? "",
+    buildStandardReplySystem(employee),
+  ].filter(Boolean).join("\n\n");
+
   return {
     employeeId: employee.id,
     employeeName: employee.name,
     role: employee.role,
-    system: employee.prompt?.system ?? "",
+    system,
     user: taskText,
   };
 }
@@ -93,6 +147,8 @@ function buildPlanningSystemPrompt(employees) {
     "4) 목표와 무관한 직원은 절대 넣지 마라. 보통 3~6명.",
     "5) 외부 공개·발표·보고·고객 전송처럼 사람이 확인해야 하는 과제는 needsReview:true, 내부 초안성 작업은 false로 표시하라.",
     "6) 배열 순서는 실제 실행 순서다. 뒤 직원은 앞 직원의 산출물을 참고하므로, 의존성이 있는 업무는 반드시 앞뒤 순서가 자연스럽게 배열하라.",
+    "7) subtask는 '무엇을 만들어야 하는지'와 '어떤 형태로 끝내야 하는지'가 드러나야 한다.",
+    "8) 빈칸, [placeholder], 막연한 조사/검토 지시만 있는 subtask는 금지한다.",
     "",
     "[직원 명단]",
     roster,
@@ -293,7 +349,12 @@ async function summarizeOrchestration(goal, results, employees) {
     "너는 HA:YEON AI STUDIO의 관제 매니저다.",
     "직원별 산출물을 종합해 전체 요약, 빠진 부분, 다음 액션 체크리스트를 간결하게 정리한다.",
     "한국어로 작성하고, 실제 실행에 바로 쓸 수 있는 항목 중심으로 답한다.",
-    "전체 10줄 이내로 제한하고, 불릿 중심으로 작성한다.",
+    "빈칸, [placeholder], 일반론은 금지한다.",
+    "아래 형식을 지킨다.",
+    "핵심 요약: 전체 상황 1문장",
+    "누락 위험: 빠진 정보/품질 리스크 1~3개",
+    "다음 액션: 바로 할 일 2~4개",
+    "검토 필요: 사람이 확인할 항목 1~3개",
   ].join("\n");
 
   return postAgent("/api/agent/summarize", {

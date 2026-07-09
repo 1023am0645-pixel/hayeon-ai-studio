@@ -164,18 +164,22 @@ function buildEffectiveSystem(system, mode) {
     "",
     "",
     "[출력 형식 규칙]",
-    "한국어로 핵심만 답한다.",
-    "불릿 3~5개, 각 항목은 한 줄과 최대 한 문장으로 제한한다.",
-    "서론·결론·일반론·표·장문 설명은 쓰지 않는다.",
-    "전체 8줄 이내로 작성한다.",
+    "한국어로 답한다.",
+    "시스템 프롬프트에 지정된 표준 출력 형식을 우선 따른다.",
+    "기본 형식은 '핵심 요약 / 할 일 / 산출물 / 다음 액션'이다.",
+    "각 섹션은 1~4줄 이내로 제한한다.",
+    "빈칸, [placeholder], 일반론, 과한 서론은 쓰지 않는다.",
+    "정보가 부족하면 '확인 필요:'로 필요한 정보만 짧게 적는다.",
   ].join("\n");
 
   const summaryRule = [
     "",
     "",
     "[요약 출력 규칙]",
-    "전체 10줄 이내로 제한한다.",
-    "누락 위험, 다음 액션, 검토 필요 항목을 우선한다.",
+    "시스템 프롬프트에 지정된 요약 형식을 우선 따른다.",
+    "기본 형식은 '핵심 요약 / 누락 위험 / 다음 액션 / 검토 필요'이다.",
+    "각 섹션은 1~4줄 이내로 제한한다.",
+    "빈칸, [placeholder], 일반론은 쓰지 않는다.",
   ].join("\n");
 
   if (mode === "summarize") return `${system}${summaryRule}`;
@@ -184,8 +188,8 @@ function buildEffectiveSystem(system, mode) {
 
 function maxTokensForMode(mode) {
   if (mode === "plan") return 700;
-  if (mode === "summarize") return 520;
-  return 380;
+  if (mode === "summarize") return 720;
+  return 560;
 }
 
 function inputLimitForMode(mode) {
