@@ -855,6 +855,35 @@ function hydrateOrchestrationFromRemoteRun(data) {
   const run = data?.run ?? {};
   const runId = run.id ?? "";
   const items = Array.isArray(data?.items) ? data.items : [];
+  const hydratedItems = items.map((item, index) => {
+    const metadata = safeParseJson(item.metadata_json);
+    const key = String(item.id ?? "").startsWith(`${runId}:`)
+      ? String(item.id).slice(runId.length + 1)
+      : (item.id ?? `${item.employee_id}#${index}`);
+    return {
+      key,
+      employeeId: item.employee_id ?? "",
+      name: item.employee_name ?? item.employee_id ?? "직원",
+      subtask: item.subtask ?? "",
+      order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
+      status: item.status ?? "queued",
+      phase: metadata.phase ?? item.status ?? "queued",
+      text: item.result_text ?? "",
+      error: item.error_text ?? "",
+      needsReview: Boolean(item.needs_review),
+      taskId: metadata.taskId ?? "",
+      isSummary: false,
+    };
+  });
+  const restoredTasks = hydratedItems
+    .filter((item) => item.status === "done" || item.status === "error")
+    .map((item) => ({
+      id: item.taskId || `remote-${runId}-${item.key}`,
+      title: item.subtask,
+      assigneeId: item.employeeId,
+      status: item.status,
+    }));
+
   state.orch = {
     ...getInitialOrchState(),
     running: run.status === "running" || run.status === "queued",
@@ -865,26 +894,8 @@ function hydrateOrchestrationFromRemoteRun(data) {
     completedAt: Date.parse(run.completed_at) || 0,
     summary: run.summary ?? "",
     summaryError: run.summary_error ?? "",
-    items: items.map((item, index) => {
-      const metadata = safeParseJson(item.metadata_json);
-      const key = String(item.id ?? "").startsWith(`${runId}:`)
-        ? String(item.id).slice(runId.length + 1)
-        : (item.id ?? `${item.employee_id}#${index}`);
-      return {
-        key,
-        employeeId: item.employee_id ?? "",
-        name: item.employee_name ?? item.employee_id ?? "직원",
-        subtask: item.subtask ?? "",
-        order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
-        status: item.status ?? "queued",
-        phase: metadata.phase ?? item.status ?? "queued",
-        text: item.result_text ?? "",
-        error: item.error_text ?? "",
-        needsReview: Boolean(item.needs_review),
-        taskId: metadata.taskId ?? "",
-        isSummary: false,
-      };
-    }),
+    items: hydratedItems,
+    tasks: restoredTasks,
   };
 }
 
