@@ -11,10 +11,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" />
-    <link rel="stylesheet" href="./src/styles.css?v=107" />
-    <link rel="stylesheet" href="./src/styles-v2.css?v=107" />
-    <link rel="stylesheet" href="./src/styles-building.css?v=107" />
-    <link rel="stylesheet" href="./src/theme.css?v=107" />
+    <link rel="stylesheet" href="./src/styles.css?v=109" />
+    <link rel="stylesheet" href="./src/styles-v2.css?v=109" />
+    <link rel="stylesheet" href="./src/styles-building.css?v=109" />
+    <link rel="stylesheet" href="./src/theme.css?v=109" />
   </head>
   <body>
     <div class="game-root">
@@ -233,6 +233,14 @@
         <button class="primary-button full-width" type="submit">분배 실행</button>
       </form>
 
+      <section class="orchestration-history" id="orchestrationHistory" aria-live="polite">
+        <div class="orch-history-head">
+          <strong>최근 실행 기록</strong>
+          <button type="button" id="refreshOrchestrationHistoryButton">새로고침</button>
+        </div>
+        <p class="orch-history-empty">관리자 로그인 후 저장된 실행 기록을 불러올 수 있습니다.</p>
+      </section>
+
       <div class="orchestration-progress" id="orchestrationProgress" aria-live="polite">
         목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.
       </div>
@@ -268,9 +276,9 @@
 
     <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="./src/data/office-data.js?v=108"></script>
-    <script src="./src/services/ai-adapter.js?v=108"></script>
-    <script src="./src/services/automation-store.js?v=108"></script>
-    <script src="./src/app.js?v=108"></script>
+    <script src="./src/data/office-data.js?v=109"></script>
+    <script src="./src/services/ai-adapter.js?v=109"></script>
+    <script src="./src/services/automation-store.js?v=109"></script>
+    <script src="./src/app.js?v=109"></script>
   </body>
 </html>

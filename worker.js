@@ -58,6 +58,10 @@ async function handleAutomationRoute(request, env, url) {
   }
 
   try {
+    if (url.pathname === "/api/automation/runs" && request.method === "GET") {
+      return listAutomationRuns(env.AGENT_DB, url, context.requestId);
+    }
+
     if (url.pathname === "/api/automation/runs" && request.method === "POST") {
       const body = await parseJsonBody(request, context.requestId);
       if (body instanceof Response) return body;
@@ -212,6 +216,41 @@ async function createAutomationRun(db, body, requestId) {
     },
     requestId,
   }, 201);
+}
+
+async function listAutomationRuns(db, url, requestId) {
+  const rawLimit = Number(url.searchParams.get("limit") ?? 8);
+  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 8, 1), 30);
+  const rows = await db.prepare(`
+    SELECT
+      r.id,
+      r.goal,
+      r.status,
+      r.source,
+      r.summary,
+      r.summary_error,
+      r.created_at,
+      r.updated_at,
+      r.started_at,
+      r.completed_at,
+      COUNT(i.id) AS item_count,
+      COALESCE(SUM(CASE WHEN i.status = 'done' THEN 1 ELSE 0 END), 0) AS done_count,
+      COALESCE(SUM(CASE WHEN i.status = 'review' THEN 1 ELSE 0 END), 0) AS review_count,
+      COALESCE(SUM(CASE WHEN i.status = 'error' THEN 1 ELSE 0 END), 0) AS error_count,
+      COALESCE(SUM(CASE WHEN i.status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count
+    FROM agent_runs r
+    LEFT JOIN agent_run_items i ON i.run_id = r.id
+    GROUP BY r.id
+    ORDER BY r.created_at DESC
+    LIMIT ?
+  `).bind(limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: { runs: rows.results ?? [] },
+    requestId,
+  });
 }
 
 async function updateAutomationRun(db, runId, body, requestId) {

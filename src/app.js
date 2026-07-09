@@ -61,6 +61,8 @@ const refs = {
   orchestrationGoal: $("#orchestrationGoal"),
   orchestrationProgress: $("#orchestrationProgress"),
   orchestrationResults: $("#orchestrationResults"),
+  orchestrationHistory: $("#orchestrationHistory"),
+  refreshOrchestrationHistoryButton: $("#refreshOrchestrationHistoryButton"),
   orchestrationDetail: $("#orchestrationDetail"),
   orchestrationDetailContent: $("#orchestrationDetailContent"),
   closeOrchestrationDetailButton: $("#closeOrchestrationDetailButton"),
@@ -593,6 +595,9 @@ function bindEvents() {
   refs.orchestrationResults.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationProgress.addEventListener("keydown", handleOrchestrationDetailKeydown);
   refs.orchestrationResults.addEventListener("keydown", handleOrchestrationDetailKeydown);
+  refs.refreshOrchestrationHistoryButton?.addEventListener("click", loadOrchestrationHistory);
+  refs.orchestrationHistory?.addEventListener("click", handleOrchestrationHistoryClick);
+  refs.orchestrationHistory?.addEventListener("keydown", handleOrchestrationHistoryKeydown);
   refs.closeOrchestrationDetailButton.addEventListener("click", closeOrchestrationDetail);
 
 }
@@ -666,6 +671,7 @@ function openOrchestrationPanel() {
   refs.orchestrationPanel.classList.remove("is-hidden");
   refs.orchestrationPanel.setAttribute("aria-hidden", "false");
   renderStoredOrchestrationPanel();
+  loadOrchestrationHistory();
   refs.orchestrationGoal.focus();
 }
 
@@ -732,6 +738,184 @@ async function handleOrchestrationSubmit(event) {
     submitButton.disabled = false;
     refs.orchestrationGoal.disabled = false;
     renderOrchestrationBadge();
+  }
+}
+
+async function loadOrchestrationHistory() {
+  if (!refs.orchestrationHistory) return;
+  if (!automationStore?.listRuns) {
+    renderOrchestrationHistoryMessage("서버 저장소 기능을 불러오지 못했습니다.");
+    return;
+  }
+  if (!isAdminLoggedIn()) {
+    renderOrchestrationHistoryMessage("관리자 로그인 후 저장된 실행 기록을 불러올 수 있습니다.");
+    return;
+  }
+
+  renderOrchestrationHistoryMessage("최근 실행 기록을 불러오는 중입니다...");
+  try {
+    const data = await automationStore.listRuns({ limit: 8 });
+    renderOrchestrationHistory(data.runs ?? []);
+  } catch (error) {
+    const message = error?.message === "unauthorized"
+      ? "관리자 로그인이 필요합니다."
+      : automationStore.isStorageMissing?.(error)
+        ? "서버 저장소가 아직 연결되지 않았습니다."
+        : "최근 실행 기록을 불러오지 못했습니다.";
+    renderOrchestrationHistoryMessage(message);
+  }
+}
+
+function renderOrchestrationHistoryMessage(message) {
+  if (!refs.orchestrationHistory) return;
+  refs.orchestrationHistory.innerHTML = `
+    <div class="orch-history-head">
+      <strong>최근 실행 기록</strong>
+      <button type="button" id="refreshOrchestrationHistoryButton">새로고침</button>
+    </div>
+    <p class="orch-history-empty">${escapeHtml(message)}</p>
+  `;
+  refs.refreshOrchestrationHistoryButton = $("#refreshOrchestrationHistoryButton");
+  refs.refreshOrchestrationHistoryButton?.addEventListener("click", loadOrchestrationHistory);
+}
+
+function renderOrchestrationHistory(runs) {
+  if (!refs.orchestrationHistory) return;
+  const rows = runs.map((run) => {
+    const status = String(run.status ?? "queued");
+    const statusLabel = getOrchestrationStatusLabel(status);
+    const itemCount = Number(run.item_count ?? 0);
+    const doneCount = Number(run.done_count ?? 0);
+    const reviewCount = Number(run.review_count ?? 0);
+    const errorCount = Number(run.error_count ?? 0);
+    const meta = [
+      formatRemoteDate(run.completed_at || run.updated_at || run.created_at),
+      `${doneCount}/${itemCount || 0} 완료`,
+      reviewCount ? `${reviewCount} 검토` : "",
+      errorCount ? `${errorCount} 오류` : "",
+    ].filter(Boolean).join(" · ");
+    return `
+      <button
+        class="orch-history-item is-${escapeHtml(status)}"
+        type="button"
+        data-orch-run-id="${escapeHtml(run.id)}"
+      >
+        <span>${escapeHtml(statusLabel)}</span>
+        <strong>${escapeHtml(run.goal || "목표 없음")}</strong>
+        <em>${escapeHtml(meta || "기록 정보 없음")}</em>
+      </button>
+    `;
+  }).join("");
+
+  refs.orchestrationHistory.innerHTML = `
+    <div class="orch-history-head">
+      <strong>최근 실행 기록</strong>
+      <button type="button" id="refreshOrchestrationHistoryButton">새로고침</button>
+    </div>
+    ${rows ? `<div class="orch-history-list">${rows}</div>` : "<p class=\"orch-history-empty\">저장된 실행 기록이 아직 없습니다.</p>"}
+  `;
+  refs.refreshOrchestrationHistoryButton = $("#refreshOrchestrationHistoryButton");
+  refs.refreshOrchestrationHistoryButton?.addEventListener("click", loadOrchestrationHistory);
+}
+
+function handleOrchestrationHistoryClick(event) {
+  const item = event.target.closest("[data-orch-run-id]");
+  if (!item) return;
+  loadStoredOrchestrationRun(item.dataset.orchRunId);
+}
+
+function handleOrchestrationHistoryKeydown(event) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const item = event.target.closest("[data-orch-run-id]");
+  if (!item) return;
+  event.preventDefault();
+  loadStoredOrchestrationRun(item.dataset.orchRunId);
+}
+
+async function loadStoredOrchestrationRun(runId) {
+  if (!automationStore?.getRun || !runId || orchestrationUi.isRunning) return;
+  try {
+    renderOrchestrationHistoryMessage("선택한 실행 기록을 불러오는 중입니다...");
+    const data = await automationStore.getRun(runId);
+    hydrateOrchestrationFromRemoteRun(data);
+    refs.orchestrationGoal.value = state.orch.goal ?? "";
+    saveState();
+    renderStoredOrchestrationPanel();
+    renderOrchestrationBadge();
+    closeOrchestrationDetail();
+    loadOrchestrationHistory();
+    showToast("저장된 실행 기록을 불러왔습니다.");
+  } catch (error) {
+    renderOrchestrationHistoryMessage("실행 기록을 불러오지 못했습니다.");
+    showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "실행 기록을 불러오지 못했습니다.");
+  }
+}
+
+function hydrateOrchestrationFromRemoteRun(data) {
+  const run = data?.run ?? {};
+  const runId = run.id ?? "";
+  const items = Array.isArray(data?.items) ? data.items : [];
+  state.orch = {
+    ...getInitialOrchState(),
+    running: run.status === "running" || run.status === "queued",
+    goal: run.goal ?? "",
+    remoteRunId: runId,
+    remoteStorage: "d1",
+    startedAt: Date.parse(run.started_at || run.created_at) || 0,
+    completedAt: Date.parse(run.completed_at) || 0,
+    summary: run.summary ?? "",
+    summaryError: run.summary_error ?? "",
+    items: items.map((item, index) => {
+      const metadata = safeParseJson(item.metadata_json);
+      const key = String(item.id ?? "").startsWith(`${runId}:`)
+        ? String(item.id).slice(runId.length + 1)
+        : (item.id ?? `${item.employee_id}#${index}`);
+      return {
+        key,
+        employeeId: item.employee_id ?? "",
+        name: item.employee_name ?? item.employee_id ?? "직원",
+        subtask: item.subtask ?? "",
+        order: Number.isFinite(Number(item.sort_order)) ? Number(item.sort_order) : index,
+        status: item.status ?? "queued",
+        phase: metadata.phase ?? item.status ?? "queued",
+        text: item.result_text ?? "",
+        error: item.error_text ?? "",
+        needsReview: Boolean(item.needs_review),
+        taskId: metadata.taskId ?? "",
+        isSummary: false,
+      };
+    }),
+  };
+}
+
+function getOrchestrationStatusLabel(status) {
+  const labels = {
+    queued: "대기",
+    running: "진행",
+    review: "검토",
+    done: "완료",
+    error: "오류",
+    cancelled: "취소",
+  };
+  return labels[status] ?? status;
+}
+
+function formatRemoteDate(value) {
+  const timestamp = Date.parse(value);
+  if (!timestamp) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function safeParseJson(text) {
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    return {};
   }
 }
 
@@ -1140,6 +1324,7 @@ function syncOrchestrationResult(result) {
     summaryError: result.summaryError ?? "",
     completedAt: result.pendingReview ? null : new Date().toISOString(),
   });
+  loadOrchestrationHistory();
 }
 
 function renderOrchestrationResults(result) {

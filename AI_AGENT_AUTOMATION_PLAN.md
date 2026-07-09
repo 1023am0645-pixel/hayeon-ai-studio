@@ -73,6 +73,13 @@
 - `worker.js`: run 상태 PATCH, run item upsert API 추가
 - D1이 아직 연결되지 않은 경우 기존 localStorage 실행 흐름을 유지한다.
 
+## 4차 실행 기록 복원
+
+- `worker.js`: 최근 오케스트레이션 실행 목록 API 추가
+- `src/services/automation-store.js`: `listRuns()` 추가
+- `src/app.js`: 오케스트레이션 패널에서 최근 실행 기록 조회 및 선택 기록 복원
+- `src/styles-building.css`: 최근 실행 기록 UI 스타일 추가
+
 ## 이후 예상 수정 파일
 
 - `wrangler.toml`: D1/KV/Queue/R2 바인딩 추가

@@ -6091,6 +6091,114 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   opacity: 0.62;
 }
 
+.orchestration-history {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  background: rgba(255, 253, 247, 0.62);
+  border: 1px solid rgba(171, 123, 57, 0.16);
+  border-radius: 16px;
+}
+
+.orch-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orch-history-head strong {
+  color: #33210f;
+  font-size: 13px;
+}
+
+.orch-history-head button {
+  padding: 6px 9px;
+  color: rgba(63, 42, 20, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 245, 219, 0.72);
+  border: 1px solid rgba(166, 116, 49, 0.18);
+  border-radius: 999px;
+}
+
+.orch-history-list {
+  display: grid;
+  gap: 7px;
+}
+
+.orch-history-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  color: rgba(54, 34, 15, 0.82);
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(166, 116, 49, 0.14);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.orch-history-item:hover,
+.orch-history-item:focus-visible {
+  outline: 2px solid rgba(230, 170, 78, 0.22);
+  background: rgba(255, 246, 224, 0.86);
+}
+
+.orch-history-item span {
+  align-self: start;
+  padding: 2px 7px;
+  color: #5a3511;
+  font-size: 11px;
+  font-weight: 900;
+  background: rgba(242, 196, 113, 0.34);
+  border-radius: 999px;
+}
+
+.orch-history-item.is-done span {
+  color: #17633d;
+  background: rgba(126, 211, 157, 0.28);
+}
+
+.orch-history-item.is-error span {
+  color: #8d2b25;
+  background: rgba(239, 112, 98, 0.20);
+}
+
+.orch-history-item.is-review span {
+  color: #77510a;
+  background: rgba(245, 203, 92, 0.30);
+}
+
+.orch-history-item strong,
+.orch-history-item em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orch-history-item strong {
+  color: #2f1f10;
+  font-size: 13px;
+}
+
+.orch-history-item em {
+  grid-column: 2;
+  color: rgba(65, 43, 21, 0.58);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.orch-history-empty {
+  margin: 0;
+  color: rgba(65, 43, 21, 0.62);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .orchestration-progress {
   display: grid;
   gap: 8px;

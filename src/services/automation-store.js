@@ -43,6 +43,11 @@ function getHealth() {
   return requestAutomation("/api/automation/health");
 }
 
+function listRuns({ limit = 8 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 8, 1), 30);
+  return requestAutomation(`/api/automation/runs?limit=${safeLimit}`);
+}
+
 function createRun({ goal, source = "orchestration", status = "running", metadata = {} }) {
   return requestAutomation("/api/automation/runs", {
     method: "POST",
@@ -79,6 +84,7 @@ window.HayeonAutomationStore = {
   AutomationStoreError,
   requestAutomation,
   getHealth,
+  listRuns,
   createRun,
   updateRun,
   getRun,
