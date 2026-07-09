@@ -68,6 +68,12 @@ async function handleAutomationRoute(request, env, url) {
       return createAutomationRun(env.AGENT_DB, body, context.requestId);
     }
 
+    if (url.pathname === "/api/automation/tasks" && request.method === "POST") {
+      const body = await parseJsonBody(request, context.requestId);
+      if (body instanceof Response) return body;
+      return upsertAutomationTask(env.AGENT_DB, body, context.requestId);
+    }
+
     const runItemMatch = url.pathname.match(/^\/api\/automation\/runs\/([^/]+)\/items$/);
     if (runItemMatch && request.method === "POST") {
       const body = await parseJsonBody(request, context.requestId);
@@ -446,6 +452,84 @@ async function upsertAutomationArtifact(db, runId, body, requestId) {
   });
 }
 
+async function upsertAutomationTask(db, body, requestId) {
+  const id = normalizeId(body.id ?? body.taskId ?? body.task_id, 180);
+  if (!id) return agentError("bad_task_id", 400, requestId);
+
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 500) : "";
+  if (!title) return agentError("bad_task", 400, requestId);
+
+  const sourceRunId = normalizeId(body.sourceRunId ?? body.source_run_id ?? body.orchestrationRunId, 120) || null;
+  const sourceItemId = normalizeId(body.sourceItemId ?? body.source_item_id, 180);
+  const employeeId = normalizeId(body.employeeId ?? body.employee_id ?? body.assigneeId, 120);
+  const status = normalizeBoardTaskStatus(body.status, "todo");
+  const priority = normalizeId(body.priority, 40) || "normal";
+  const description = nullableString(body.description, "", 3000);
+  const resultText = nullableString(body.resultText ?? body.result_text, "", 100000);
+  const resultError = nullableString(body.resultError ?? body.result_error, "", 10000);
+  const dueAt = nullableString(body.dueAt ?? body.due_at ?? body.dueDate, null, 120);
+  const completedAt = nullableString(body.completedAt ?? body.completed_at, status === "done" ? new Date().toISOString() : null, 120);
+  const metadataInput = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+    ? { ...body.metadata, sourceItemId: sourceItemId || body.metadata.sourceItemId }
+    : { sourceItemId };
+  const metadata = stringifyMetadata(metadataInput);
+  const now = new Date().toISOString();
+
+  await db.prepare(`
+    INSERT INTO tasks (
+      id, source_run_id, source_item_id, employee_id, title, description, status, priority,
+      result_text, result_error, due_at, metadata_json, created_at, updated_at, completed_at
+    )
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      source_run_id = excluded.source_run_id,
+      employee_id = excluded.employee_id,
+      title = excluded.title,
+      description = excluded.description,
+      status = excluded.status,
+      priority = excluded.priority,
+      result_text = excluded.result_text,
+      result_error = excluded.result_error,
+      due_at = excluded.due_at,
+      metadata_json = excluded.metadata_json,
+      updated_at = excluded.updated_at,
+      completed_at = excluded.completed_at
+  `).bind(
+    id,
+    sourceRunId,
+    employeeId,
+    title,
+    description,
+    status,
+    priority,
+    resultText,
+    resultError,
+    dueAt,
+    metadata,
+    now,
+    now,
+    completedAt,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      task: {
+        id,
+        sourceRunId,
+        employeeId,
+        title,
+        status,
+        priority,
+        updatedAt: now,
+        completedAt,
+      },
+    },
+    requestId,
+  });
+}
+
 async function getAutomationRun(db, runId, requestId) {
   const id = String(runId ?? "").trim().slice(0, 120);
   if (!id) return agentError("bad_run_id", 400, requestId);
@@ -501,6 +585,12 @@ function normalizeRunStatus(value, fallback = "queued") {
 
 function normalizeItemStatus(value, fallback = "queued") {
   const allowed = new Set(["queued", "running", "review", "done", "error", "skipped"]);
+  const status = String(value ?? "").trim();
+  return allowed.has(status) ? status : fallback;
+}
+
+function normalizeBoardTaskStatus(value, fallback = "todo") {
+  const allowed = new Set(["todo", "doing", "review", "done", "error", "blocked"]);
   const status = String(value ?? "").trim();
   return allowed.has(status) ? status : fallback;
 }

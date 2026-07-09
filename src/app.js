@@ -285,6 +285,7 @@ function getInitialOrchState() {
     summary: "",
     summaryError: "",
     tasks: [],
+    artifacts: [],
     logs: [],
     startedAt: 0,
     completedAt: 0,
@@ -300,6 +301,7 @@ function hydrateOrch(savedOrch = {}) {
     running: false,
     items: Array.isArray(savedOrch.items) ? savedOrch.items : [],
     tasks: Array.isArray(savedOrch.tasks) ? savedOrch.tasks : [],
+    artifacts: Array.isArray(savedOrch.artifacts) ? savedOrch.artifacts : [],
     logs: Array.isArray(savedOrch.logs) ? savedOrch.logs : [],
   };
 }
@@ -557,7 +559,9 @@ function bindEvents() {
       const title = window.prompt("업무명을 수정하세요.", task.title);
       if (title?.trim()) {
         task.title = title.trim();
+        task.updatedAt = new Date().toISOString();
         saveState();
+        syncRemoteTask(task);
         render();
         showToast("업무명이 수정되었습니다.");
       }
@@ -982,6 +986,7 @@ function hydrateOrchestrationFromRemoteRun(data) {
   const run = data?.run ?? {};
   const runId = run.id ?? "";
   const items = Array.isArray(data?.items) ? data.items : [];
+  const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
   const hydratedItems = items.map((item, index) => {
     const metadata = safeParseJson(item.metadata_json);
     const key = String(item.id ?? "").startsWith(`${runId}:`)
@@ -1023,8 +1028,33 @@ function hydrateOrchestrationFromRemoteRun(data) {
     summaryError: run.summary_error ?? "",
     items: hydratedItems,
     tasks: restoredTasks,
+    artifacts: hydrateRemoteArtifacts(artifacts, runId),
     logs: buildRestoredOrchestrationLogs(run, hydratedItems),
   };
+}
+
+function hydrateRemoteArtifacts(artifacts, runId = "") {
+  return artifacts.map((artifact, index) => {
+    const metadata = safeParseJson(artifact.metadata_json);
+    const itemKey = String(artifact.item_id ?? "").startsWith(`${runId}:`)
+      ? String(artifact.item_id).slice(runId.length + 1)
+      : (metadata.itemKey ?? "");
+    return {
+      id: artifact.id ?? `artifact-${index}`,
+      runId: artifact.run_id ?? runId,
+      itemId: artifact.item_id ?? "",
+      itemKey,
+      taskId: artifact.task_id ?? metadata.localTaskId ?? "",
+      employeeId: artifact.employee_id ?? "",
+      title: artifact.title ?? "산출물",
+      artifactType: artifact.artifact_type ?? "markdown",
+      contentText: artifact.content_text ?? "",
+      fileUrl: artifact.file_url ?? "",
+      metadata,
+      createdAt: artifact.created_at ?? "",
+      updatedAt: artifact.updated_at ?? "",
+    };
+  });
 }
 
 function getOrchestrationStatusLabel(status) {
@@ -1201,12 +1231,14 @@ function upsertOrchestrationItem(update) {
       taskId: patch.taskId || state.orch.items[index].taskId,
       order: Number.isFinite(patch.order) ? patch.order : state.orch.items[index].order,
     };
+    rememberOrchestrationArtifact(state.orch.items[index]);
     appendOrchestrationUpdateLog(update, key, nextStatus, employeeName);
     syncRemoteOrchestrationItem(state.orch.items[index]);
     return;
   }
 
   state.orch.items.push(patch);
+  rememberOrchestrationArtifact(patch);
   appendOrchestrationUpdateLog(update, key, nextStatus, employeeName);
   syncRemoteOrchestrationItem(patch);
 }
@@ -1259,12 +1291,45 @@ function syncRemoteOrchestrationItem(item) {
 }
 
 function syncRemoteOrchestrationArtifact(item) {
-  if (!automationStore?.upsertArtifact || !state.orch.remoteRunId || !item || item.isSummary) {
-    return Promise.resolve(null);
-  }
+  if (!item || item.isSummary) return Promise.resolve(null);
   if (item.status !== "done" || !item.text) return Promise.resolve(null);
+  rememberOrchestrationArtifact(item);
+  if (!automationStore?.upsertArtifact || !state.orch.remoteRunId) return Promise.resolve(null);
   return automationStore.upsertArtifact(state.orch.remoteRunId, serializeRemoteOrchestrationArtifact(item))
+    .then((data) => rememberOrchestrationArtifact(item, data?.artifact))
     .catch(handleRemoteOrchestrationSyncError);
+}
+
+function rememberOrchestrationArtifact(item, remoteArtifact = {}) {
+  if (!item || !item.text) return;
+  const runId = state.orch.remoteRunId ?? "";
+  const key = item.key ?? `${item.employeeId}-${item.order ?? 0}`;
+  const id = remoteArtifact.id ?? (runId ? `${runId}:artifact:${key}` : `local-artifact:${key}`);
+  const artifact = {
+    id,
+    runId,
+    itemId: remoteArtifact.itemId ?? (runId ? `${runId}:${key}` : key),
+    itemKey: key,
+    taskId: item.taskId ?? "",
+    employeeId: item.employeeId,
+    title: item.subtask || `${item.name || item.employeeId} 산출물`,
+    artifactType: remoteArtifact.artifactType ?? "markdown",
+    contentText: buildOrchestrationItemMarkdown(item),
+    fileUrl: "",
+    metadata: {
+      source: "orchestration",
+      employeeName: item.name,
+      role: getEmployee(item.employeeId)?.role ?? "",
+      goal: state.orch.goal ?? "",
+    },
+    createdAt: remoteArtifact.createdAt ?? new Date().toISOString(),
+    updatedAt: remoteArtifact.updatedAt ?? new Date().toISOString(),
+  };
+  state.orch.artifacts = Array.isArray(state.orch.artifacts) ? state.orch.artifacts : [];
+  const index = state.orch.artifacts.findIndex((entry) => entry.id === artifact.id);
+  if (index >= 0) state.orch.artifacts[index] = { ...state.orch.artifacts[index], ...artifact };
+  else state.orch.artifacts.push(artifact);
+  saveState();
 }
 
 function syncRemoteOrchestrationRun(patch) {
@@ -1328,9 +1393,49 @@ function serializeRemoteOrchestrationArtifact(item) {
   };
 }
 
+function syncRemoteTask(task) {
+  if (!automationStore?.upsertTask || !task || !isAdminLoggedIn()) return;
+  void automationStore.upsertTask(serializeRemoteTask(task)).catch(handleRemoteTaskSyncError);
+}
+
+function serializeRemoteTask(task) {
+  const sourceRunId = task.orchestrationRunId || "";
+  const sourceItem = sourceRunId
+    ? (state.orch.items ?? []).find((item) => item.taskId === task.id)
+    : null;
+  const sourceItemId = sourceItem ? `${sourceRunId}:${sourceItem.key}`.slice(0, 180) : "";
+  return {
+    id: task.id,
+    sourceRunId,
+    sourceItemId,
+    employeeId: task.assigneeId,
+    title: task.title,
+    description: task.orchestrationGoal || "",
+    status: task.status,
+    priority: task.priority,
+    resultText: task.resultText ?? "",
+    resultError: task.resultError ?? "",
+    dueDate: task.dueDate ?? "",
+    completedAt: task.completedAt ?? "",
+    metadata: {
+      source: task.source ?? "manual",
+      tags: task.tags ?? [],
+      orchestrationGoal: task.orchestrationGoal ?? "",
+      createdAt: task.createdAt ?? "",
+      updatedAt: task.updatedAt ?? "",
+      createdBy: "hayeon-ai-studio",
+    },
+  };
+}
+
 function handleRemoteOrchestrationSyncError(error) {
   if (automationStore?.isStorageMissing?.(error)) return;
   console.warn("remote orchestration sync failed:", error);
+}
+
+function handleRemoteTaskSyncError(error) {
+  if (automationStore?.isStorageMissing?.(error)) return;
+  console.warn("remote task sync failed:", error);
 }
 
 function handleOrchestrationReviewAction(event) {
@@ -1408,6 +1513,25 @@ async function handleOrchestrationArtifactAction(event) {
     return;
   }
 
+  if (action === "copy-artifact" || action === "download-artifact") {
+    const artifact = findOrchestrationArtifact(actionButton.dataset.artifactId);
+    if (!artifact) return;
+    const content = getArtifactContent(artifact);
+    if (action === "copy-artifact") {
+      try {
+        await copyTextToClipboard(content);
+        showToast(`${artifact.title || "산출물"} 문서를 복사했습니다.`);
+      } catch {
+        showToast("브라우저 복사 권한이 막혀 복사하지 못했습니다.");
+      }
+      return;
+    }
+
+    downloadTextFile(makeOrchestrationFilename(artifact.title || "agent-artifact"), content);
+    showToast(`${artifact.title || "산출물"} 문서를 다운로드했습니다.`);
+    return;
+  }
+
   const item = findOrchestrationItem(key);
   if (!item) return;
 
@@ -1429,6 +1553,11 @@ async function handleOrchestrationArtifactAction(event) {
 
 function findOrchestrationItem(key) {
   return state.orch.items.find((item) => item.key === key) ?? null;
+}
+
+function findOrchestrationArtifact(id) {
+  if (!id) return null;
+  return (state.orch.artifacts ?? []).find((artifact) => artifact.id === id) ?? null;
 }
 
 function reuseOrchestrationGoal(goal) {
@@ -1716,6 +1845,7 @@ function buildStoredOrchestrationResult() {
     }),
     summary: state.orch.summary,
     summaryError: state.orch.summaryError,
+    artifacts: Array.isArray(state.orch.artifacts) ? state.orch.artifacts : [],
   };
 }
 
@@ -1779,6 +1909,19 @@ function buildOrchestrationRunMarkdown(result = buildStoredOrchestrationResult()
     lines.push("## 결과", "", "아직 저장된 직원별 결과가 없습니다.", "");
   }
 
+  const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
+  if (artifacts.length) {
+    lines.push("## 산출물 라이브러리", "");
+    artifacts.forEach((artifact, index) => {
+      lines.push(
+        `### ${index + 1}. ${artifact.title || "산출물"}`,
+        "",
+        getArtifactContent(artifact),
+        "",
+      );
+    });
+  }
+
   const logs = Array.isArray(state.orch.logs) ? state.orch.logs : [];
   if (logs.length) {
     lines.push("## 실행 로그", "");
@@ -1827,6 +1970,19 @@ function downloadTextFile(filename, body, type = "text/markdown;charset=utf-8") 
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function getArtifactContent(artifact = {}) {
+  if (artifact.contentText) return artifact.contentText;
+  const item = (state.orch.items ?? []).find((entry) =>
+    entry.key === artifact.itemKey || entry.key === artifact.itemId || entry.taskId === artifact.taskId
+  );
+  if (item) return buildOrchestrationItemMarkdown(item);
+  return [
+    `# ${artifact.title || "AI 직원 산출물"}`,
+    "",
+    "저장된 본문이 없습니다. 서버 저장소에서 실행 기록을 다시 불러오거나 직원별 결과를 확인하세요.",
+  ].join("\n");
 }
 
 function syncOrchestrationResult(result) {
@@ -1890,12 +2046,14 @@ function renderOrchestrationResults(result) {
       </article>
     `;
   }).join("");
+  const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
+  const artifactBlock = renderOrchestrationArtifacts(artifacts);
 
   refs.orchestrationResults.innerHTML = `
     <div class="orch-result-summary">
       <div>
         <strong>${escapeHtml(result.goal)}</strong>
-        <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록</span>
+        <span>${result.plan.length}명에게 분배 · ${result.tasks.length}개 업무 등록 · ${artifacts.length}개 산출물</span>
       </div>
       <div class="orch-result-summary-actions">
         <button type="button" data-orch-artifact-action="reuse-goal">목표 다시 입력</button>
@@ -1904,7 +2062,47 @@ function renderOrchestrationResults(result) {
       </div>
     </div>
     ${summaryBlock}
+    ${artifactBlock}
     ${rows || "<p class=\"orch-empty\">선정된 직원이 없습니다.</p>"}
+  `;
+}
+
+function renderOrchestrationArtifacts(artifacts = []) {
+  if (!artifacts.length) return "";
+  const rows = artifacts.map((artifact) => {
+    const employee = getEmployee(artifact.employeeId);
+    const updatedAt = formatRemoteDate(artifact.updatedAt || artifact.createdAt);
+    const meta = [
+      employee?.name || artifact.metadata?.employeeName || "AI 직원",
+      artifact.artifactType || "markdown",
+      updatedAt,
+    ].filter(Boolean).join(" · ");
+    const preview = getArtifactContent(artifact).replace(/^# .+\n+/, "").trim().slice(0, 180);
+
+    return `
+      <article class="orch-artifact-card">
+        <div>
+          <span class="orch-artifact-kicker">산출물</span>
+          <strong>${escapeHtml(artifact.title || "AI 직원 산출물")}</strong>
+          <em>${escapeHtml(meta)}</em>
+          <p>${escapeHtml(preview || "저장된 본문이 없습니다.")}</p>
+        </div>
+        <div class="orch-artifact-actions">
+          <button type="button" data-orch-artifact-action="copy-artifact" data-artifact-id="${escapeHtml(artifact.id)}">복사</button>
+          <button type="button" data-orch-artifact-action="download-artifact" data-artifact-id="${escapeHtml(artifact.id)}">저장</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  return `
+    <section class="orch-artifact-library" aria-label="오케스트레이션 산출물 라이브러리">
+      <div class="orch-artifact-library-head">
+        <strong>산출물 라이브러리</strong>
+        <span>${artifacts.length}개 문서</span>
+      </div>
+      <div class="orch-artifact-list">${rows}</div>
+    </section>
   `;
 }
 
@@ -3714,6 +3912,7 @@ function createDirectedTask(employeeId, formData, extra = {}) {
   setEmployeeForTask(employeeId, task.id, "working");
   state.detailMode = "summary";
   saveState();
+  syncRemoteTask(task);
   render();
   scheduleTaskSimulation(task.id);
   showToast(`${getEmployee(employeeId).name}에게 업무를 배정했습니다.`);
@@ -4060,6 +4259,7 @@ function updateTaskStatus(taskId, status) {
 
   if (status === "doing") scheduleTaskSimulation(task.id);
   saveState();
+  syncRemoteTask(task);
   render();
 }
 

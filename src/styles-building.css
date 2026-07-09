@@ -6496,7 +6496,9 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 
 .orch-result-summary,
 .orch-summary-card,
-.orch-result-card {
+.orch-result-card,
+.orch-artifact-library,
+.orch-artifact-card {
   padding: 13px 14px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(171, 123, 57, 0.16);
@@ -6509,7 +6511,8 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .orch-result-summary-actions,
-.orch-detail-actions {
+.orch-detail-actions,
+.orch-artifact-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -6520,7 +6523,8 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .orch-result-summary-actions button,
-.orch-detail-actions button {
+.orch-detail-actions button,
+.orch-artifact-actions button {
   min-height: 30px;
   padding: 5px 10px;
   color: #4a2f13;
@@ -6539,7 +6543,9 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .orch-result-summary-actions button:hover,
 .orch-result-summary-actions button:focus-visible,
 .orch-detail-actions button:hover,
-.orch-detail-actions button:focus-visible {
+.orch-detail-actions button:focus-visible,
+.orch-artifact-actions button:hover,
+.orch-artifact-actions button:focus-visible {
   background: rgba(255, 231, 173, 0.94);
   border-color: rgba(173, 120, 40, 0.42);
   outline: none;
@@ -6719,6 +6725,96 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   white-space: pre-wrap;
 }
 
+.orch-artifact-library {
+  display: grid;
+  gap: 10px;
+  background:
+    linear-gradient(145deg, rgba(248, 255, 252, 0.76), rgba(255, 247, 229, 0.70)),
+    rgba(255, 255, 255, 0.76);
+  border-color: rgba(77, 151, 126, 0.20);
+}
+
+.orch-artifact-library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orch-artifact-library-head strong {
+  color: #233c32;
+  font-size: 14px;
+}
+
+.orch-artifact-library-head span {
+  color: rgba(37, 72, 59, 0.64);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.orch-artifact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.orch-artifact-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(77, 151, 126, 0.16);
+}
+
+.orch-artifact-card strong,
+.orch-artifact-card em,
+.orch-artifact-card p {
+  display: block;
+}
+
+.orch-artifact-kicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 8px;
+  margin-bottom: 6px;
+  color: #27604e;
+  background: rgba(222, 249, 239, 0.90);
+  border: 1px solid rgba(77, 151, 126, 0.20);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.orch-artifact-card strong {
+  color: #2c2517;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.orch-artifact-card em {
+  margin-top: 3px;
+  color: rgba(48, 65, 50, 0.66);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.orch-artifact-card p {
+  max-height: 84px;
+  padding-right: 4px;
+  overflow: auto;
+  margin: 7px 0 0;
+  color: rgba(47, 31, 16, 0.72);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.orch-artifact-actions {
+  justify-content: flex-end;
+}
+
 .orch-detail-card {
   display: grid;
   gap: 12px;
@@ -6862,6 +6958,14 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
     grid-column: 1 / -1;
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  .orch-artifact-card {
+    grid-template-columns: 1fr;
+  }
+
+  .orch-artifact-actions {
+    justify-content: flex-start;
   }
 }
 
