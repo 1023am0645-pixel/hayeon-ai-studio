@@ -4,6 +4,9 @@ export default {
     if (url.pathname.startsWith("/api/agent")) {
       return handleAgentRoute(request, env, url);
     }
+    if (url.pathname.startsWith("/api/automation")) {
+      return handleAutomationRoute(request, env, url);
+    }
     return env.ASSETS.fetch(request);
   },
 };
@@ -15,7 +18,7 @@ async function handleAgentRoute(request, env, url) {
     return agentError("method_not_allowed", 405);
   }
 
-  const context = validateAgentRequest(request, env);
+  const context = validateApiRequest(request, env);
   if (context.error) return context.error;
 
   let body;
@@ -33,7 +36,46 @@ async function handleAgentRoute(request, env, url) {
   return runAgent(body, env, { mode, requestId: context.requestId });
 }
 
-function validateAgentRequest(request, env) {
+async function handleAutomationRoute(request, env, url) {
+  const context = validateApiRequest(request, env);
+  if (context.error) return context.error;
+
+  if (url.pathname === "/api/automation/health" && request.method === "GET") {
+    return json({
+      ok: true,
+      text: "",
+      data: {
+        storage: env.AGENT_DB ? "d1" : "missing",
+        binding: "AGENT_DB",
+        schema: "migrations/0001_agent_automation.sql",
+      },
+      requestId: context.requestId,
+    });
+  }
+
+  if (!env.AGENT_DB) {
+    return agentError("agent_db_missing", 503, context.requestId, "Cloudflare D1 binding AGENT_DB is not configured.");
+  }
+
+  try {
+    if (url.pathname === "/api/automation/runs" && request.method === "POST") {
+      const body = await parseJsonBody(request, context.requestId);
+      if (body instanceof Response) return body;
+      return createAutomationRun(env.AGENT_DB, body, context.requestId);
+    }
+
+    const runMatch = url.pathname.match(/^\/api\/automation\/runs\/([^/]+)$/);
+    if (runMatch && request.method === "GET") {
+      return getAutomationRun(env.AGENT_DB, runMatch[1], context.requestId);
+    }
+  } catch (error) {
+    return agentError("automation_failed", 500, context.requestId, String(error).slice(0, 240));
+  }
+
+  return agentError(request.method === "GET" || request.method === "POST" ? "not_found" : "method_not_allowed", request.method === "GET" || request.method === "POST" ? 404 : 405, context.requestId);
+}
+
+function validateApiRequest(request, env) {
   const requestId = crypto.randomUUID();
   const host = new URL(request.url).host;
   const origin = request.headers.get("Origin");
@@ -54,6 +96,14 @@ function validateAgentRequest(request, env) {
   }
 
   return { requestId };
+}
+
+async function parseJsonBody(request, requestId) {
+  try {
+    return await request.json();
+  } catch {
+    return agentError("bad_json", 400, requestId);
+  }
 }
 
 async function runAgent(body, env, { mode, requestId }) {
@@ -123,6 +173,67 @@ function maxTokensForMode(mode) {
 function inputLimitForMode(mode) {
   if (mode === "summarize") return 7000;
   return 2000;
+}
+
+async function createAutomationRun(db, body, requestId) {
+  const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+  if (!goal || goal.length > 2000) return agentError("bad_goal", 400, requestId);
+
+  const id = typeof body.id === "string" && body.id.trim() ? body.id.trim().slice(0, 120) : crypto.randomUUID();
+  const source = typeof body.source === "string" && body.source.trim() ? body.source.trim().slice(0, 80) : "manual";
+  const metadata = stringifyMetadata(body.metadata);
+  const now = new Date().toISOString();
+
+  await db.prepare(`
+    INSERT INTO agent_runs (id, goal, status, source, metadata_json, created_at, updated_at)
+    VALUES (?, ?, 'queued', ?, ?, ?, ?)
+  `).bind(id, goal, source, metadata, now, now).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      run: { id, goal, status: "queued", source, metadata: JSON.parse(metadata), createdAt: now, updatedAt: now },
+    },
+    requestId,
+  }, 201);
+}
+
+async function getAutomationRun(db, runId, requestId) {
+  const id = String(runId ?? "").trim().slice(0, 120);
+  if (!id) return agentError("bad_run_id", 400, requestId);
+
+  const run = await db.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first();
+  if (!run) return agentError("run_not_found", 404, requestId);
+
+  const items = await db.prepare(`
+    SELECT * FROM agent_run_items
+    WHERE run_id = ?
+    ORDER BY sort_order ASC, created_at ASC
+  `).bind(id).all();
+  const artifacts = await db.prepare(`
+    SELECT * FROM artifacts
+    WHERE run_id = ?
+    ORDER BY created_at ASC
+  `).bind(id).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      run,
+      items: items.results ?? [],
+      artifacts: artifacts.results ?? [],
+    },
+    requestId,
+  });
+}
+
+function stringifyMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "{}";
+  const text = JSON.stringify(metadata);
+  if (text.length <= 4000) return text;
+  return JSON.stringify({ truncated: true });
 }
 
 function json(obj, status = 200) {

@@ -59,6 +59,13 @@
 - `src/services/ai-adapter.js`: 새 API 경로 연결
 - `AI_AGENT_AUTOMATION_PLAN.md`: 구현 계획 문서
 
+## 2차 저장소 기반 준비
+
+- `migrations/0001_agent_automation.sql`: D1 저장소 스키마 초안
+- `wrangler.toml`: `AGENT_DB` D1 바인딩 주석형 초안
+- `worker.js`: `/api/automation/health`, `/api/automation/runs`, `/api/automation/runs/:id` 기본 골격
+- D1이 연결되지 않은 배포 환경에서는 기존 화면을 깨지 않고 `agent_db_missing`을 반환한다.
+
 ## 이후 예상 수정 파일
 
 - `wrangler.toml`: D1/KV/Queue/R2 바인딩 추가

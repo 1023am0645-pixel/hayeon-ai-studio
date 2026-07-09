@@ -8,3 +8,13 @@ binding = "ASSETS"
 
 [ai]
 binding = "AI"
+
+# Enable this after creating the Cloudflare D1 database.
+# Command example:
+# wrangler d1 create hayeon-ai-studio-agent
+#
+# [[d1_databases]]
+# binding = "AGENT_DB"
+# database_name = "hayeon-ai-studio-agent"
+# database_id = "replace-with-cloudflare-d1-database-id"
+# migrations_dir = "migrations"
