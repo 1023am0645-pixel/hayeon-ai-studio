@@ -1,5 +1,6 @@
 .DS_Store
 .dev.vars
+.wrangler/
 node_modules/
 
 # Local upload/build/reference folders
