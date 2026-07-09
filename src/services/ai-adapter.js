@@ -51,18 +51,30 @@ function getAdminHeaders() {
   return token ? { "content-type": "application/json", "X-Admin-Token": token } : { "content-type": "application/json" };
 }
 
+async function postAgent(path, payload, label) {
+  const request = async (targetPath) => {
+    return fetch(targetPath, {
+      method: "POST",
+      headers: getAdminHeaders(),
+      body: JSON.stringify(payload),
+    });
+  };
+
+  let res = await request(path);
+  if (res.status === 404 && path !== "/api/agent") {
+    res = await request("/api/agent");
+  }
+  if (res.status === 401) throw new Error("unauthorized");
+  if (!res.ok) throw new Error(`${label} api ${res.status}`);
+
+  const data = await res.json();
+  if (!data.text) throw new Error(data.error || `empty ${label} response`);
+  return data.text.trim();
+}
+
 async function requestEmployeeReply(employee, taskText) {
   const p = buildEmployeePrompt(employee, taskText);
-  const res = await fetch("/api/agent", {
-    method: "POST",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ system: p.system, user: p.user }),
-  });
-  if (res.status === 401) throw new Error("unauthorized");
-  if (!res.ok) throw new Error("agent api " + res.status);
-  const data = await res.json();
-  if (!data.text) throw new Error(data.error || "empty");
-  return data.text;
+  return postAgent("/api/agent/reply", { system: p.system, user: p.user }, "agent");
 }
 
 function buildPlanningSystemPrompt(employees) {
@@ -172,17 +184,8 @@ async function planTasks(goal, employees) {
   if (!cleanGoal) return [];
 
   const system = buildPlanningSystemPrompt(employees);
-  const res = await fetch("/api/agent", {
-    method: "POST",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({ system, user: cleanGoal }),
-  });
-  if (res.status === 401) throw new Error("unauthorized");
-  if (!res.ok) throw new Error("planner api " + res.status);
-
-  const data = await res.json();
-  if (!data.text) throw new Error(data.error || "empty planner response");
-  const parsedPlan = parsePlanJson(data.text, employees, cleanGoal);
+  const text = await postAgent("/api/agent/plan", { system, user: cleanGoal }, "planner");
+  const parsedPlan = parsePlanJson(text, employees, cleanGoal);
   return parsedPlan.length ? parsedPlan : ruleBasedPlan(cleanGoal, employees);
 }
 
@@ -293,26 +296,17 @@ async function summarizeOrchestration(goal, results, employees) {
     "전체 10줄 이내로 제한하고, 불릿 중심으로 작성한다.",
   ].join("\n");
 
-  const res = await fetch("/api/agent", {
-    method: "POST",
-    headers: getAdminHeaders(),
-    body: JSON.stringify({
-      system: summaryEmployee.prompt?.system ? `${summaryEmployee.prompt.system}\n\n${system}` : system,
-      user: `목표: ${cleanGoal}\n\n${body}`,
-    }),
-  });
-  if (res.status === 401) throw new Error("unauthorized");
-  if (!res.ok) throw new Error("summary api " + res.status);
-
-  const data = await res.json();
-  if (!data.text) throw new Error(data.error || "empty summary response");
-  return data.text.trim();
+  return postAgent("/api/agent/summarize", {
+    system: summaryEmployee.prompt?.system ? `${summaryEmployee.prompt.system}\n\n${system}` : system,
+    user: `목표: ${cleanGoal}\n\n${body}`,
+  }, "summary");
 }
 
 window.HayeonAiAdapter = {
   aiProviderSlots,
   buildEmployeePrompt,
   createSimulatedReply,
+  postAgent,
   requestEmployeeReply,
   buildPlanningSystemPrompt,
   parsePlanJson,
