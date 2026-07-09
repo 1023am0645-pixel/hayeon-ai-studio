@@ -1474,6 +1474,34 @@ textarea {
   font-weight: 900;
 }
 
+.task-source-badge {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  margin-top: 5px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(159, 114, 45, 0.26);
+  background: rgba(255, 248, 230, 0.88);
+  color: #7a5520;
+  font-size: 0.6rem;
+  font-weight: 950;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.task-source-badge.source-orchestration {
+  border-color: rgba(73, 129, 120, 0.28);
+  background: rgba(223, 251, 241, 0.92);
+  color: #23645b;
+}
+
+.task-detail-meta .task-source-badge,
+.task-inline-summary .task-source-badge,
+.history-task-item .task-source-badge {
+  margin-top: 0;
+}
+
 .mini-button {
   min-height: 23px;
   padding: 0 7px;
@@ -1634,6 +1662,31 @@ textarea {
   margin: 0;
   padding-left: 17px;
   font-size: 0.74rem;
+}
+
+.history-task-item {
+  display: grid;
+  gap: 3px;
+}
+
+.history-task-item span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.history-task-item small {
+  color: #b9caff;
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.task-inline-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
 }
 
 .is-hidden {

@@ -261,8 +261,31 @@ function hydrateEmployees(savedEmployees = []) {
 }
 
 function hydrateTasks(savedTasks = []) {
-  const savedIds = new Set(savedTasks.map((task) => task.id));
-  return [...savedTasks, ...clone(seedTasks).filter((task) => !savedIds.has(task.id))];
+  const safeSavedTasks = Array.isArray(savedTasks) ? savedTasks : [];
+  const savedIds = new Set(safeSavedTasks.map((task) => task.id));
+  return [
+    ...safeSavedTasks.map(hydrateTask),
+    ...clone(seedTasks)
+      .filter((task) => !savedIds.has(task.id))
+      .map(hydrateTask),
+  ];
+}
+
+function hydrateTask(task = {}) {
+  const tags = Array.isArray(task.tags) ? task.tags : [];
+  const inferredSource = tags.includes("#오케스트레이션") ? "orchestration" : "manual";
+  return {
+    ...task,
+    tags,
+    source: task.source ?? inferredSource,
+    orchestrationRunId: task.orchestrationRunId ?? "",
+    orchestrationGoal: task.orchestrationGoal ?? "",
+    resultText: task.resultText ?? "",
+    resultError: task.resultError ?? "",
+    createdAt: task.createdAt ?? "",
+    updatedAt: task.updatedAt ?? task.createdAt ?? "",
+    completedAt: task.completedAt ?? "",
+  };
 }
 
 function saveState() {
@@ -2339,7 +2362,9 @@ function renderEmployeeDetail() {
   refs.employeeDetail.classList.remove("is-hidden");
 
   const departmentName = getDepartmentName(getEmployeeRoomId(employee));
-  const currentTask = employee.currentTaskId ? getTask(employee.currentTaskId) : null;
+  const taskSnapshot = getEmployeeTaskSnapshot(employee);
+  const currentTask = taskSnapshot.currentTask;
+  const recentTask = taskSnapshot.recentTasks[0];
   const status = statusMeta[employee.status] ?? statusMeta.idle;
 
   refs.employeeDetail.innerHTML = `
@@ -2366,11 +2391,11 @@ function renderEmployeeDetail() {
         </div>
         <div>
           <dt>현재 업무</dt>
-          <dd>${currentTask?.title ?? "배정된 업무 없음"}</dd>
+          <dd>${currentTask ? renderTaskInlineSummary(currentTask) : "배정된 업무 없음"}</dd>
         </div>
         <div>
           <dt>최근 완료</dt>
-          <dd>${employee.recentCompleted[0] ?? "아직 기록 없음"}</dd>
+          <dd>${recentTask ? renderTaskInlineSummary(recentTask) : (employee.recentCompleted[0] ?? "아직 기록 없음")}</dd>
         </div>
       </dl>
     </div>
@@ -2400,6 +2425,51 @@ function renderEmployeeDetail() {
     </div>
 
     ${renderDetailMode(employee)}
+  `;
+}
+
+function getEmployeeTaskSnapshot(employee) {
+  if (!employee) return { currentTask: null, recentTasks: [] };
+  const assignedTasks = state.tasks
+    .filter((task) => task.assigneeId === employee.id)
+    .map(hydrateTask);
+  const currentTask = (employee.currentTaskId ? assignedTasks.find((task) => task.id === employee.currentTaskId) : null)
+    ?? assignedTasks.find((task) => task.status === "doing")
+    ?? null;
+  const recentTasks = assignedTasks
+    .filter((task) => task.id !== currentTask?.id)
+    .sort((a, b) => getTaskSortTime(b) - getTaskSortTime(a))
+    .slice(0, 6);
+  return { currentTask, recentTasks };
+}
+
+function getTaskSortTime(task) {
+  return Date.parse(task.completedAt || task.updatedAt || task.createdAt || "") || 0;
+}
+
+function getTaskStatusLabel(task) {
+  return taskColumns.find((column) => column.id === task.status)?.title ?? task.status ?? "상태 없음";
+}
+
+function getTaskSourceLabel(task) {
+  if (task?.source === "orchestration") return "AI 분배";
+  if (task?.source === "manual") return "직접 지시";
+  return "";
+}
+
+function renderTaskSourceBadge(task) {
+  const label = getTaskSourceLabel(task);
+  if (!label) return "";
+  const sourceClass = task?.source === "orchestration" ? "orchestration" : "manual";
+  return `<span class="task-source-badge source-${sourceClass}">${escapeHtml(label)}</span>`;
+}
+
+function renderTaskInlineSummary(task) {
+  return `
+    <span class="task-inline-summary">
+      <span>${escapeHtml(task.title)}</span>
+      ${renderTaskSourceBadge(task)}
+    </span>
   `;
 }
 
@@ -2448,11 +2518,28 @@ function renderDetailMode(employee) {
   }
 
   if (state.detailMode === "history") {
+    const taskSnapshot = getEmployeeTaskSnapshot(employee);
+    const taskHistory = [
+      ...(taskSnapshot.currentTask ? [taskSnapshot.currentTask] : []),
+      ...taskSnapshot.recentTasks,
+    ];
     return `
       <div class="inline-panel">
-        <p class="mode-note">최근 완료 업무</p>
+        <p class="mode-note">업무 보드 연결 이력</p>
         <ul class="history-list">
-          ${employee.recentCompleted.map((item) => `<li>${item}</li>`).join("") || "<li>아직 완료 기록이 없습니다.</li>"}
+          ${
+            taskHistory.map((task) => `
+              <li class="history-task-item">
+                <span>
+                  <strong>${escapeHtml(task.title)}</strong>
+                  ${renderTaskSourceBadge(task)}
+                </span>
+                <small>${escapeHtml(getTaskStatusLabel(task))}</small>
+              </li>
+            `).join("")
+            || employee.recentCompleted.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+            || "<li>아직 완료 기록이 없습니다.</li>"
+          }
         </ul>
       </div>
     `;
@@ -2555,7 +2642,10 @@ function renderTaskCard(task) {
   return `
     <article class="task-card priority-${task.priority}" data-task-id="${task.id}">
       <div class="task-card-top">
-        <strong>${task.title}</strong>
+        <div>
+          <strong>${task.title}</strong>
+          ${renderTaskSourceBadge(task)}
+        </div>
         <button class="mini-button" data-task-action="edit" type="button" title="업무 수정">수정</button>
       </div>
       <p>${employee?.name ?? "미지정"} · ${employee?.role ?? ""}</p>
@@ -2643,7 +2733,18 @@ function renderTaskDetailModal(task) {
       <span>담당 ${escapeHtml(employee?.name ?? "미지정")}</span>
       <span>우선순위 ${escapeHtml(priorityLabel)}</span>
       <span>${task.dueDate ? `마감 ${escapeHtml(task.dueDate)}` : "마감일 없음"}</span>
+      ${task.source ? renderTaskSourceBadge(task) : ""}
     </div>
+    ${
+      task.source === "orchestration"
+        ? `
+          <section class="task-detail-section">
+            <strong>AI 분배 정보</strong>
+            <p>${escapeHtml(task.orchestrationGoal || "오케스트레이션 실행에서 자동 배정된 업무입니다.")}</p>
+          </section>
+        `
+        : ""
+    }
     <section class="task-detail-section">
       <strong>진행상황</strong>
       <p>${escapeHtml(getTaskProgressText(task, employee))}</p>
@@ -3096,13 +3197,19 @@ function fillAssigneeOptions() {
 function createDirectedTask(employeeId, formData, extra = {}) {
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return null;
+  const baseTags = normalizeTags(String(formData.get("tags") ?? ""));
+  const extraTags = Array.isArray(extra.tags) ? extra.tags : normalizeTags(String(extra.tags ?? ""));
+  const tags = [...new Set([...baseTags, ...extraTags])].slice(0, 6);
 
   const task = makeTask({
     title,
     assigneeId: employeeId,
     status: "doing",
     priority: String(formData.get("priority") ?? "medium"),
-    tags: normalizeTags(String(formData.get("tags") ?? "")),
+    tags,
+    source: extra.source ?? "manual",
+    orchestrationRunId: extra.orchestrationRunId ?? "",
+    orchestrationGoal: extra.orchestrationGoal ?? "",
     resultText: extra.resultText ?? "",
     resultError: extra.resultError ?? "",
   });
@@ -3142,13 +3249,19 @@ function makeOrchestrationTaskForm(title) {
   const formData = new FormData();
   formData.set("title", title);
   formData.set("priority", "medium");
-  formData.set("tags", "#오케스트레이션");
+  formData.set("tags", "#오케스트레이션 #AI업무");
   return formData;
 }
 
 function createOrchestrationTask(employeeId, title, resultText = "", resultError = "") {
   const beforeCount = state.tasks.length;
-  const task = createDirectedTask(employeeId, makeOrchestrationTaskForm(title), { resultText, resultError });
+  const task = createDirectedTask(employeeId, makeOrchestrationTaskForm(title), {
+    source: "orchestration",
+    orchestrationRunId: state.orch.remoteRunId ?? "",
+    orchestrationGoal: state.orch.goal ?? "",
+    resultText,
+    resultError,
+  });
   return state.tasks.length > beforeCount ? task : null;
 }
 
@@ -3168,7 +3281,20 @@ function rememberOrchestrationTask(task) {
     title: task.title,
     assigneeId: task.assigneeId,
     status: task.status,
+    source: task.source ?? "orchestration",
+    orchestrationRunId: task.orchestrationRunId ?? state.orch.remoteRunId ?? "",
+    orchestrationGoal: task.orchestrationGoal ?? state.orch.goal ?? "",
   });
+}
+
+function syncRememberedOrchestrationTask(task) {
+  if (!task || task.source !== "orchestration") return;
+  state.orch.tasks = Array.isArray(state.orch.tasks) ? state.orch.tasks : [];
+  const item = state.orch.tasks.find((entry) => entry.id === task.id);
+  if (!item) return;
+  item.status = task.status;
+  item.completedAt = task.completedAt ?? "";
+  item.updatedAt = task.updatedAt ?? "";
 }
 
 function getOrderedOrchestrationItems() {
@@ -3384,7 +3510,20 @@ async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
   return { ...result, plan };
 }
 
-function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = [], resultText = "", resultError = "" }) {
+function makeTask({
+  title,
+  assigneeId,
+  status,
+  priority,
+  dueDate = "",
+  tags = [],
+  source = "manual",
+  orchestrationRunId = "",
+  orchestrationGoal = "",
+  resultText = "",
+  resultError = "",
+}) {
+  const now = new Date().toISOString();
   return {
     id: `task-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
     title,
@@ -3393,9 +3532,14 @@ function makeTask({ title, assigneeId, status, priority, dueDate = "", tags = []
     priority,
     dueDate,
     tags,
+    source,
+    orchestrationRunId,
+    orchestrationGoal,
     resultText,
     resultError,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    completedAt: "",
   };
 }
 
@@ -3405,12 +3549,17 @@ function updateTaskStatus(taskId, status) {
   if (!task) return;
 
   task.status = status;
+  task.updatedAt = new Date().toISOString();
+  syncRememberedOrchestrationTask(task);
   const employee = getEmployee(task.assigneeId);
   if (employee) {
     if (status === "doing") setEmployeeForTask(employee.id, task.id, "working");
     if (status === "todo") setEmployeeForTask(employee.id, null, "preparing");
     if (status === "review") setEmployeeForTask(employee.id, task.id, "review");
-    if (status === "done") completeEmployeeTask(employee.id, task);
+    if (status === "done") {
+      completeEmployeeTask(employee.id, task);
+      syncRememberedOrchestrationTask(task);
+    }
   }
 
   if (status === "doing") scheduleTaskSimulation(task.id);
@@ -3483,6 +3632,8 @@ function completeEmployeeTask(employeeId, task) {
   if (!employee) return;
   employee.currentTaskId = null;
   employee.status = "idle";
+  task.completedAt = task.completedAt || new Date().toISOString();
+  task.updatedAt = task.completedAt;
   employee.recentCompleted = [task.title, ...(employee.recentCompleted ?? [])].slice(0, 5);
 }
 
