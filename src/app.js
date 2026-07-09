@@ -16,6 +16,7 @@ const {
   requestEmployeeReply,
   summarizeOrchestration,
 } = window.HayeonAiAdapter;
+const automationStore = window.HayeonAutomationStore ?? null;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -220,6 +221,9 @@ function getInitialOrchState() {
   return {
     running: false,
     goal: "",
+    remoteRunId: "",
+    remoteStorage: "local",
+    remoteError: "",
     items: [],
     summary: "",
     summaryError: "",
@@ -697,6 +701,7 @@ async function handleOrchestrationSubmit(event) {
   refs.orchestrationGoal.disabled = true;
 
   try {
+    await createRemoteOrchestrationRun(goal);
     const result = await runOrchestrationToBoard(goal, {
       onUpdate: (update) => {
         upsertOrchestrationItem(update);
@@ -772,10 +777,98 @@ function upsertOrchestrationItem(update) {
       taskId: patch.taskId || state.orch.items[index].taskId,
       order: Number.isFinite(patch.order) ? patch.order : state.orch.items[index].order,
     };
+    syncRemoteOrchestrationItem(state.orch.items[index]);
     return;
   }
 
   state.orch.items.push(patch);
+  syncRemoteOrchestrationItem(patch);
+}
+
+async function createRemoteOrchestrationRun(goal) {
+  if (!automationStore?.createRun) return null;
+
+  try {
+    const data = await automationStore.createRun({
+      goal,
+      source: "orchestration",
+      status: "running",
+      metadata: {
+        clientStartedAt: new Date().toISOString(),
+        app: "hayeon-ai-studio",
+      },
+    });
+    const runId = data?.run?.id ?? "";
+    if (!runId) return null;
+
+    state.orch.remoteRunId = runId;
+    state.orch.remoteStorage = "d1";
+    state.orch.remoteError = "";
+    saveState();
+    return runId;
+  } catch (error) {
+    const isMissing = automationStore.isStorageMissing?.(error);
+    state.orch.remoteStorage = isMissing ? "missing" : "local";
+    state.orch.remoteError = error?.message ?? String(error);
+    saveState();
+    if (!isMissing) console.warn("automation storage unavailable:", error);
+    return null;
+  }
+}
+
+function syncRemoteOrchestrationItem(item) {
+  if (!automationStore?.upsertRunItem || !state.orch.remoteRunId || !item) return;
+  if (item.isSummary) {
+    syncRemoteOrchestrationRun({
+      status: item.status === "error" ? "error" : "running",
+      summary: item.status === "done" ? item.text : undefined,
+      summaryError: item.status === "error" ? item.error : undefined,
+    });
+    return;
+  }
+
+  void automationStore.upsertRunItem(state.orch.remoteRunId, serializeRemoteOrchestrationItem(item))
+    .catch(handleRemoteOrchestrationSyncError);
+}
+
+function syncRemoteOrchestrationRun(patch) {
+  if (!automationStore?.updateRun || !state.orch.remoteRunId) return;
+  void automationStore.updateRun(state.orch.remoteRunId, {
+    ...patch,
+    metadata: {
+      clientUpdatedAt: new Date().toISOString(),
+      app: "hayeon-ai-studio",
+    },
+  }).catch(handleRemoteOrchestrationSyncError);
+}
+
+function serializeRemoteOrchestrationItem(item) {
+  const employee = getEmployee(item.employeeId);
+  const now = new Date().toISOString();
+  const completedStatuses = new Set(["done", "error", "skipped"]);
+  return {
+    id: item.key,
+    employeeId: item.employeeId,
+    employeeName: item.name || employee?.name || item.employeeId,
+    role: employee?.role ?? "",
+    subtask: item.subtask,
+    status: item.status,
+    needsReview: Boolean(item.needsReview),
+    resultText: item.text,
+    errorText: item.error,
+    sortOrder: item.order,
+    startedAt: item.status === "running" ? now : undefined,
+    completedAt: completedStatuses.has(item.status) ? now : undefined,
+    metadata: {
+      phase: item.phase,
+      taskId: item.taskId,
+    },
+  };
+}
+
+function handleRemoteOrchestrationSyncError(error) {
+  if (automationStore?.isStorageMissing?.(error)) return;
+  console.warn("remote orchestration sync failed:", error);
 }
 
 function handleOrchestrationReviewAction(event) {
@@ -853,6 +946,7 @@ function editOrchestrationItem(key) {
   item.error = "";
   item.phase = "review";
   saveState();
+  syncRemoteOrchestrationItem(item);
   renderOrchestrationProgress();
   openOrchestrationDetail(key);
   showToast("검토 지시문을 수정했습니다.");
@@ -869,6 +963,7 @@ async function skipOrchestrationItem(key) {
   item.text = "";
   item.error = "";
   saveState();
+  syncRemoteOrchestrationItem(item);
   renderOrchestrationProgress();
   renderOrchestrationBadge();
   showToast(`${item.name} 업무를 건너뛰었습니다.`);
@@ -1039,6 +1134,12 @@ function syncOrchestrationResult(result) {
   }));
   state.orch.completedAt = result.pendingReview ? 0 : Date.now();
   saveState();
+  syncRemoteOrchestrationRun({
+    status: result.pendingReview ? "review" : (result.summaryError ? "error" : "done"),
+    summary: result.summary ?? "",
+    summaryError: result.summaryError ?? "",
+    completedAt: result.pendingReview ? null : new Date().toISOString(),
+  });
 }
 
 function renderOrchestrationResults(result) {
@@ -3002,6 +3103,7 @@ async function finishOrchestrationIfReady({ onUpdate } = {}) {
   if (hasPendingOrchestrationWork()) {
     state.orch.running = false;
     saveState();
+    syncRemoteOrchestrationRun({ status: pendingReview ? "review" : "running" });
     renderOrchestrationProgress({ ...buildStoredOrchestrationResult(), pendingReview });
     renderOrchestrationResults({ ...buildStoredOrchestrationResult(), pendingReview });
     renderOrchestrationBadge();

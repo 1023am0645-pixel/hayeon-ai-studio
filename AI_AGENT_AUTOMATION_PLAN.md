@@ -66,6 +66,13 @@
 - `worker.js`: `/api/automation/health`, `/api/automation/runs`, `/api/automation/runs/:id` 기본 골격
 - D1이 연결되지 않은 배포 환경에서는 기존 화면을 깨지 않고 `agent_db_missing`을 반환한다.
 
+## 3차 프론트-서버 저장 연결 준비
+
+- `src/services/automation-store.js`: 프론트에서 `/api/automation/*`를 호출하는 저장소 adapter
+- `src/app.js`: 오케스트레이션 시작, 직원별 진행, 완료/검토 상태를 서버 run/item에 동기화
+- `worker.js`: run 상태 PATCH, run item upsert API 추가
+- D1이 아직 연결되지 않은 경우 기존 localStorage 실행 흐름을 유지한다.
+
 ## 이후 예상 수정 파일
 
 - `wrangler.toml`: D1/KV/Queue/R2 바인딩 추가
