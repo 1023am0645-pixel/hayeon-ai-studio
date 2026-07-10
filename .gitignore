@@ -17,3 +17,7 @@ HAYEON_AI_STUDIO_staff_character_guide_v2.docx
 
 # Local archives
 *.zip
+
+# Personal/raw avatar source files
+assets/avatars/*raw*
+assets/avatars/*-raw.*

@@ -84,6 +84,15 @@ function upsertArtifact(runId, artifact) {
   });
 }
 
+function listArtifacts({ limit = 40, employeeId = "", taskId = "", runId = "" } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(Math.min(Math.max(Number(limit) || 40, 1), 100)));
+  if (employeeId) params.set("employeeId", employeeId);
+  if (taskId) params.set("taskId", taskId);
+  if (runId) params.set("runId", runId);
+  return requestAutomation(`/api/automation/artifacts?${params.toString()}`);
+}
+
 function upsertTask(task) {
   if (!task) return Promise.resolve(null);
   return requestAutomation("/api/automation/tasks", {
@@ -136,6 +145,7 @@ window.HayeonAutomationStore = {
   getRun,
   upsertRunItem,
   upsertArtifact,
+  listArtifacts,
   upsertTask,
   listTasks,
   deleteTask,

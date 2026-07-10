@@ -21,6 +21,9 @@ const remoteChatLoadedEmployeeIds = new Set();
 const remoteChatLoadingEmployeeIds = new Set();
 let remoteTasksLoaded = false;
 let remoteTasksLoading = false;
+let remoteArtifactLibrary = [];
+let remoteArtifactLibraryLoaded = false;
+let remoteArtifactLibraryLoading = false;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -419,6 +422,7 @@ function openAdminModal() {
     localStorage.removeItem(adminTokenKey);
     resetRemoteChatCache();
     resetRemoteTaskCache();
+    resetRemoteArtifactLibraryCache();
     updateAdminButton();
     showToast("관리자 로그아웃 됐습니다.");
     return;
@@ -693,9 +697,11 @@ function bindEvents() {
     localStorage.setItem(adminTokenKey, password);
     resetRemoteChatCache();
     resetRemoteTaskCache();
+    resetRemoteArtifactLibraryCache();
     closeAdminModal();
     updateAdminButton();
     loadRemoteTasksIfNeeded({ force: true });
+    loadRemoteArtifactLibrary({ force: true });
     if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
     showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
   });
@@ -796,6 +802,7 @@ function openOrchestrationPanel() {
   refs.orchestrationPanel.setAttribute("aria-hidden", "false");
   renderStoredOrchestrationPanel();
   loadOrchestrationHistory();
+  loadRemoteArtifactLibrary();
   refs.orchestrationGoal.focus();
 }
 
@@ -930,6 +937,24 @@ async function loadOrchestrationHistory() {
         ? "서버 저장소가 아직 연결되지 않았습니다."
         : "최근 실행 기록을 불러오지 못했습니다.";
     renderOrchestrationHistoryMessage(message);
+  }
+}
+
+async function loadRemoteArtifactLibrary({ force = false } = {}) {
+  if (!automationStore?.listArtifacts || !isAdminLoggedIn()) return;
+  if (remoteArtifactLibraryLoading) return;
+  if (remoteArtifactLibraryLoaded && !force) return;
+
+  remoteArtifactLibraryLoading = true;
+  try {
+    const data = await automationStore.listArtifacts({ limit: 40 });
+    remoteArtifactLibrary = hydrateRemoteArtifacts(data?.artifacts ?? [], "");
+    remoteArtifactLibraryLoaded = true;
+    renderStoredOrchestrationPanel();
+  } catch (error) {
+    if (!automationStore.isStorageMissing?.(error)) console.warn("remote artifact library failed:", error);
+  } finally {
+    remoteArtifactLibraryLoading = false;
   }
 }
 
@@ -1332,7 +1357,11 @@ function syncRemoteOrchestrationArtifact(item) {
   rememberOrchestrationArtifact(item);
   if (!automationStore?.upsertArtifact || !state.orch.remoteRunId) return Promise.resolve(null);
   return automationStore.upsertArtifact(state.orch.remoteRunId, serializeRemoteOrchestrationArtifact(item))
-    .then((data) => rememberOrchestrationArtifact(item, data?.artifact))
+    .then((data) => {
+      rememberOrchestrationArtifact(item, data?.artifact);
+      remoteArtifactLibraryLoaded = false;
+      return data;
+    })
     .catch(handleRemoteOrchestrationSyncError);
 }
 
@@ -1682,7 +1711,10 @@ function findOrchestrationItem(key) {
 
 function findOrchestrationArtifact(id) {
   if (!id) return null;
-  return (state.orch.artifacts ?? []).find((artifact) => artifact.id === id) ?? null;
+  return [
+    ...(state.orch.artifacts ?? []),
+    ...(remoteArtifactLibrary ?? []),
+  ].find((artifact) => artifact.id === id) ?? null;
 }
 
 function reuseOrchestrationGoal(goal) {
@@ -1934,7 +1966,7 @@ function renderStoredOrchestrationPanel() {
   if (!state.orch.items.length && !state.orch.goal) {
     refs.orchestrationProgress.textContent =
       "목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.";
-    refs.orchestrationResults.innerHTML = "";
+    refs.orchestrationResults.innerHTML = renderRemoteArtifactLibrary();
     renderOrchestrationLog();
     closeOrchestrationDetail();
     return;
@@ -1947,6 +1979,14 @@ function renderStoredOrchestrationPanel() {
     return;
   }
   renderOrchestrationResults(result);
+}
+
+function renderRemoteArtifactLibrary() {
+  if (remoteArtifactLibraryLoading) {
+    return `<p class="orch-empty">최근 산출물 라이브러리를 불러오는 중입니다.</p>`;
+  }
+  if (!remoteArtifactLibrary.length) return "";
+  return renderOrchestrationArtifacts(remoteArtifactLibrary);
 }
 
 function buildStoredOrchestrationResult() {
@@ -2336,6 +2376,12 @@ function resetRemoteChatCache() {
 function resetRemoteTaskCache() {
   remoteTasksLoaded = false;
   remoteTasksLoading = false;
+}
+
+function resetRemoteArtifactLibraryCache() {
+  remoteArtifactLibrary = [];
+  remoteArtifactLibraryLoaded = false;
+  remoteArtifactLibraryLoading = false;
 }
 
 function scrollAppToTop() {

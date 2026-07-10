@@ -62,6 +62,10 @@ async function handleAutomationRoute(request, env, url) {
       return listAutomationRuns(env.AGENT_DB, url, context.requestId);
     }
 
+    if (url.pathname === "/api/automation/artifacts" && request.method === "GET") {
+      return listAutomationArtifacts(env.AGENT_DB, url, context.requestId);
+    }
+
     if (url.pathname === "/api/automation/runs" && request.method === "POST") {
       const body = await parseJsonBody(request, context.requestId);
       if (body instanceof Response) return body;
@@ -291,6 +295,44 @@ async function listAutomationRuns(db, url, requestId) {
     ok: true,
     text: "",
     data: { runs: rows.results ?? [] },
+    requestId,
+  });
+}
+
+async function listAutomationArtifacts(db, url, requestId) {
+  const rawLimit = Number(url.searchParams.get("limit") ?? 40);
+  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 40, 1), 100);
+  const employeeId = normalizeId(url.searchParams.get("employeeId") ?? url.searchParams.get("employee_id"), 120);
+  const taskId = normalizeId(url.searchParams.get("taskId") ?? url.searchParams.get("task_id"), 180);
+  const runId = normalizeId(url.searchParams.get("runId") ?? url.searchParams.get("run_id"), 120);
+  const clauses = [];
+  const binds = [];
+
+  if (employeeId) {
+    clauses.push("employee_id = ?");
+    binds.push(employeeId);
+  }
+  if (taskId) {
+    clauses.push("task_id = ?");
+    binds.push(taskId);
+  }
+  if (runId) {
+    clauses.push("run_id = ?");
+    binds.push(runId);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await db.prepare(`
+    SELECT * FROM artifacts
+    ${where}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: { artifacts: rows.results ?? [] },
     requestId,
   });
 }

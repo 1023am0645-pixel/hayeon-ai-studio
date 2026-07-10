@@ -21,3 +21,5 @@ worker.js
 *.docx
 *.map
 *.log
+assets/avatars/*raw*
+assets/avatars/*-raw.*
