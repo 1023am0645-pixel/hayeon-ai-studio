@@ -277,6 +277,7 @@ async function listAutomationRuns(db, url, requestId) {
       r.goal,
       r.status,
       r.source,
+      r.metadata_json,
       r.summary,
       r.summary_error,
       r.created_at,

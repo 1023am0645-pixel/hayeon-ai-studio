@@ -6159,6 +6159,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 800;
 }
 
+.orch-template-chip em {
+  width: max-content;
+  padding: 2px 7px;
+  color: rgba(72, 49, 25, 0.72);
+  background: rgba(255, 247, 224, 0.72);
+  border: 1px solid rgba(171, 123, 57, 0.14);
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .orchestration-form button:disabled,
 .orchestration-form textarea:disabled {
   cursor: wait;

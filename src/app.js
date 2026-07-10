@@ -154,6 +154,7 @@ const orchestrationTemplates = [
     id: "lecture-prep",
     label: "강의 준비",
     desc: "교안·PPT·리허설",
+    artifactType: "lecture-plan",
     goal: [
       "다음 강의를 준비해줘.",
       "강의 주제와 대상자를 기준으로 강의 흐름, 핵심 메시지, 실습 활동, PPT 구성, 리허설 체크리스트를 나눠서 정리해줘.",
@@ -164,6 +165,7 @@ const orchestrationTemplates = [
     id: "lecture-review",
     label: "강의 후기 정리",
     desc: "후기·성과·아카이브",
+    artifactType: "review-summary",
     goal: [
       "최근 강의 후기를 정리해줘.",
       "참여자 반응, 인상적인 문장, 개선점, 다음 강의에 반영할 액션, 아카이브용 요약문을 직원별로 나눠 작성해줘.",
@@ -174,6 +176,7 @@ const orchestrationTemplates = [
     id: "ax-report",
     label: "AX 보고서",
     desc: "성과·근거·요약",
+    artifactType: "ax-report",
     goal: [
       "AX-서포터즈 활동 보고서 초안을 만들어줘.",
       "활동 개요, 주요 성과, 참여자 변화, 증빙 자료 체크리스트, 다음 액션, 제출용 요약문을 나눠 정리해줘.",
@@ -184,6 +187,7 @@ const orchestrationTemplates = [
     id: "app-feature",
     label: "앱 기능 정리",
     desc: "기획·화면·우선순위",
+    artifactType: "app-spec",
     goal: [
       "새 앱 기능을 정리해줘.",
       "사용자 문제, 핵심 기능, 첫 화면 흐름, 필요한 데이터, 우선순위, 개발 체크리스트를 직원별 역할에 맞춰 나눠줘.",
@@ -194,6 +198,7 @@ const orchestrationTemplates = [
     id: "automation-template",
     label: "자동화 템플릿",
     desc: "반복업무·체크리스트",
+    artifactType: "automation-template",
     goal: [
       "반복 업무 자동화 템플릿을 만들어줘.",
       "업무 시작 조건, 입력 정보, 처리 순서, 확인 기준, 예외 상황, 결과물 양식을 정리해줘.",
@@ -310,6 +315,9 @@ function getInitialOrchState() {
   return {
     running: false,
     goal: "",
+    scenarioId: "",
+    scenarioLabel: "",
+    artifactType: "markdown",
     remoteRunId: "",
     remoteStorage: "local",
     remoteError: "",
@@ -982,9 +990,11 @@ function renderOrchestrationTemplates() {
           class="orch-template-chip"
           type="button"
           data-orch-template-id="${escapeHtml(template.id)}"
+          data-artifact-type="${escapeHtml(template.artifactType ?? "markdown")}"
         >
           <strong>${escapeHtml(template.label)}</strong>
           <span>${escapeHtml(template.desc)}</span>
+          <em>${escapeHtml(getArtifactTypeLabel(template.artifactType ?? "markdown"))}</em>
         </button>
       `).join("")}
     </div>
@@ -997,6 +1007,7 @@ function handleOrchestrationTemplateClick(event) {
   const template = orchestrationTemplates.find((item) => item.id === button.dataset.orchTemplateId);
   if (!template) return;
   refs.orchestrationGoal.value = template.goal;
+  refs.orchestrationGoal.dataset.scenarioId = template.id;
   refs.orchestrationGoal.focus();
   showToast(`${template.label} 시나리오를 입력했습니다. 필요하면 수정 후 실행하세요.`);
 }
@@ -1007,12 +1018,16 @@ async function handleOrchestrationSubmit(event) {
 
   const goal = String(new FormData(event.target).get("goal") ?? "").trim();
   if (!goal) return;
+  const scenario = resolveOrchestrationScenario(goal, refs.orchestrationGoal.dataset.scenarioId);
 
   orchestrationUi.isRunning = true;
   state.orch = {
     ...getInitialOrchState(),
     running: true,
     goal,
+    scenarioId: scenario.id,
+    scenarioLabel: scenario.label,
+    artifactType: scenario.artifactType,
     startedAt: Date.now(),
   };
   appendOrchestrationLog({
@@ -1067,6 +1082,7 @@ async function handleOrchestrationSubmit(event) {
     orchestrationUi.isRunning = false;
     submitButton.disabled = false;
     refs.orchestrationGoal.disabled = false;
+    delete refs.orchestrationGoal.dataset.scenarioId;
     renderOrchestrationBadge();
   }
 }
@@ -1130,6 +1146,7 @@ function renderOrchestrationHistoryMessage(message) {
 function renderOrchestrationHistory(runs) {
   if (!refs.orchestrationHistory) return;
   const rows = runs.map((run) => {
+    const metadata = safeParseJson(run.metadata_json);
     const status = String(run.status ?? "queued");
     const statusLabel = getOrchestrationStatusLabel(status);
     const itemCount = Number(run.item_count ?? 0);
@@ -1137,6 +1154,7 @@ function renderOrchestrationHistory(runs) {
     const reviewCount = Number(run.review_count ?? 0);
     const errorCount = Number(run.error_count ?? 0);
     const meta = [
+      metadata.scenarioLabel || (metadata.artifactType ? getArtifactTypeLabel(metadata.artifactType) : ""),
       formatRemoteDate(run.completed_at || run.updated_at || run.created_at),
       `${doneCount}/${itemCount || 0} 완료`,
       reviewCount ? `${reviewCount} 검토` : "",
@@ -1202,6 +1220,8 @@ async function loadStoredOrchestrationRun(runId) {
 function hydrateOrchestrationFromRemoteRun(data) {
   const run = data?.run ?? {};
   const runId = run.id ?? "";
+  const runMetadata = safeParseJson(run.metadata_json);
+  const restoredScenario = resolveOrchestrationScenario(run.goal ?? "", runMetadata.scenarioId ?? "");
   const items = Array.isArray(data?.items) ? data.items : [];
   const artifacts = Array.isArray(data?.artifacts) ? data.artifacts : [];
   const hydratedItems = items.map((item, index) => {
@@ -1237,6 +1257,9 @@ function hydrateOrchestrationFromRemoteRun(data) {
     ...getInitialOrchState(),
     running: run.status === "running" || run.status === "queued",
     goal: run.goal ?? "",
+    scenarioId: runMetadata.scenarioId || restoredScenario.id,
+    scenarioLabel: runMetadata.scenarioLabel || restoredScenario.label,
+    artifactType: runMetadata.artifactType || restoredScenario.artifactType,
     remoteRunId: runId,
     remoteStorage: "d1",
     startedAt: Date.parse(run.started_at || run.created_at) || 0,
@@ -1468,10 +1491,9 @@ async function createRemoteOrchestrationRun(goal) {
       goal,
       source: "orchestration",
       status: "running",
-      metadata: {
+      metadata: getOrchestrationRunMetadata({
         clientStartedAt: new Date().toISOString(),
-        app: "hayeon-ai-studio",
-      },
+      }),
     });
     const runId = data?.run?.id ?? "";
     if (!runId) return null;
@@ -1489,6 +1511,17 @@ async function createRemoteOrchestrationRun(goal) {
     if (!isMissing) console.warn("automation storage unavailable:", error);
     return null;
   }
+}
+
+function getOrchestrationRunMetadata(extra = {}) {
+  return {
+    app: "hayeon-ai-studio",
+    scenarioId: state.orch.scenarioId ?? "",
+    scenarioLabel: state.orch.scenarioLabel ?? "",
+    artifactType: state.orch.artifactType ?? "markdown",
+    artifactTypeLabel: getArtifactTypeLabel(state.orch.artifactType ?? "markdown"),
+    ...extra,
+  };
 }
 
 function syncRemoteOrchestrationItem(item) {
@@ -1543,6 +1576,8 @@ function rememberOrchestrationArtifact(item, remoteArtifact = {}) {
       employeeName: item.name,
       role: getEmployee(item.employeeId)?.role ?? "",
       goal: state.orch.goal ?? "",
+      scenarioId: state.orch.scenarioId ?? "",
+      scenarioLabel: state.orch.scenarioLabel ?? "",
       artifactType,
       artifactTypeLabel: getArtifactTypeLabel(artifactType),
     },
@@ -1560,10 +1595,9 @@ function syncRemoteOrchestrationRun(patch) {
   if (!automationStore?.updateRun || !state.orch.remoteRunId) return;
   void automationStore.updateRun(state.orch.remoteRunId, {
     ...patch,
-    metadata: {
+    metadata: getOrchestrationRunMetadata({
       clientUpdatedAt: new Date().toISOString(),
-      app: "hayeon-ai-studio",
-    },
+    }),
   }).catch(handleRemoteOrchestrationSyncError);
 }
 
@@ -1571,24 +1605,29 @@ function getArtifactTypeLabel(type) {
   return artifactTypeLabels[type] ?? artifactTypeLabels.markdown;
 }
 
-function getArtifactQualityChecklist(type) {
-  return artifactQualityChecks[type] ?? artifactQualityChecks.markdown;
+function resolveOrchestrationScenario(goal, preferredScenarioId = "") {
+  const template = orchestrationTemplates.find((item) => item.id === preferredScenarioId);
+  if (template) {
+    return {
+      id: template.id,
+      label: template.label,
+      artifactType: template.artifactType ?? "markdown",
+    };
+  }
+
+  const artifactType = inferArtifactTypeFromText(goal);
+  const matchedTemplate = orchestrationTemplates.find((item) => item.artifactType === artifactType);
+  return {
+    id: matchedTemplate?.id ?? artifactType,
+    label: matchedTemplate?.label ?? getArtifactTypeLabel(artifactType),
+    artifactType,
+  };
 }
 
-function getArtifactTypeFromArtifact(artifact = {}) {
-  return artifact.artifactType || artifact.metadata?.artifactType || "markdown";
-}
+function inferArtifactTypeFromText(text = "", employeeId = "") {
+  const normalizedText = String(text ?? "").toLowerCase();
+  const hasAny = (keywords) => keywords.some((keyword) => normalizedText.includes(keyword));
 
-function inferArtifactType(item = {}) {
-  const employeeId = item.employeeId ?? "";
-  const text = [
-    state.orch.goal,
-    item.subtask,
-    item.name,
-    getEmployee(employeeId)?.role,
-  ].filter(Boolean).join(" ").toLowerCase();
-
-  const hasAny = (keywords) => keywords.some((keyword) => text.includes(keyword));
   if (hasAny(["ax", "서포터즈", "보고서", "성과", "제출", "공식과제", "자율과제"]) || ["ax-pm", "report-writer", "activity-recorder"].includes(employeeId)) {
     return "ax-report";
   }
@@ -1615,6 +1654,26 @@ function inferArtifactType(item = {}) {
   return "markdown";
 }
 
+function getArtifactQualityChecklist(type) {
+  return artifactQualityChecks[type] ?? artifactQualityChecks.markdown;
+}
+
+function getArtifactTypeFromArtifact(artifact = {}) {
+  return artifact.artifactType || artifact.metadata?.artifactType || "markdown";
+}
+
+function inferArtifactType(item = {}) {
+  if (state.orch.artifactType && state.orch.artifactType !== "markdown") return state.orch.artifactType;
+  const employeeId = item.employeeId ?? "";
+  const text = [
+    state.orch.goal,
+    item.subtask,
+    item.name,
+    getEmployee(employeeId)?.role,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return inferArtifactTypeFromText(text, employeeId);
+}
+
 function serializeRemoteOrchestrationItem(item) {
   const employee = getEmployee(item.employeeId);
   const now = new Date().toISOString();
@@ -1635,6 +1694,9 @@ function serializeRemoteOrchestrationItem(item) {
     metadata: {
       phase: item.phase,
       taskId: item.taskId,
+      scenarioId: state.orch.scenarioId ?? "",
+      scenarioLabel: state.orch.scenarioLabel ?? "",
+      artifactType: state.orch.artifactType ?? "markdown",
     },
   };
 }
@@ -1660,6 +1722,8 @@ function serializeRemoteOrchestrationArtifact(item) {
       phase: item.phase,
       employeeName: item.name || employee?.name || item.employeeId,
       role: employee?.role ?? "",
+      scenarioId: state.orch.scenarioId ?? "",
+      scenarioLabel: state.orch.scenarioLabel ?? "",
       artifactType,
       artifactTypeLabel: getArtifactTypeLabel(artifactType),
       localTaskId: item.taskId ?? "",
