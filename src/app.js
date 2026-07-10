@@ -435,8 +435,8 @@ function isAdminLoggedIn() {
 function updateAdminButton() {
   if (!refs.adminButton) return;
   const loggedIn = isAdminLoggedIn();
-  refs.adminButton.setAttribute("title", loggedIn ? "관리자 로그아웃" : "관리자 로그인");
-  refs.adminButton.setAttribute("aria-label", loggedIn ? "관리자 로그아웃" : "관리자 로그인");
+  refs.adminButton.setAttribute("title", loggedIn ? "관리자 데이터 관리" : "관리자 로그인");
+  refs.adminButton.setAttribute("aria-label", loggedIn ? "관리자 데이터 관리" : "관리자 로그인");
   refs.adminButton.classList.toggle("admin-active", loggedIn);
   refs.adminButton.innerHTML = loggedIn
     ? `<svg class="lucide-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path><path d="M12 16v-2" stroke-linecap="round"></path></svg>`
@@ -445,26 +445,145 @@ function updateAdminButton() {
 
 function openAdminModal() {
   const loggedIn = isAdminLoggedIn();
-  if (loggedIn) {
-    clearAdminToken();
-    resetRemoteChatCache();
-    resetRemoteTaskCache();
-    resetRemoteArtifactLibraryCache();
-    updateAdminButton();
-    showToast("관리자 로그아웃 됐습니다.");
-    return;
-  }
-  refs.adminPasswordInput.value = "";
+  renderAdminModalContent();
   refs.adminModal.classList.remove("is-hidden");
   refs.adminModalBackdrop.classList.remove("is-hidden");
   refs.adminModal.removeAttribute("aria-hidden");
-  setTimeout(() => refs.adminPasswordInput.focus(), 50);
+  setTimeout(() => {
+    if (loggedIn) {
+      refs.adminModal.querySelector("[data-admin-action='clear-server-data']")?.focus();
+      return;
+    }
+    refs.adminModal.querySelector("#adminPasswordInput")?.focus();
+  }, 50);
 }
 
 function closeAdminModal() {
   refs.adminModal.classList.add("is-hidden");
   refs.adminModalBackdrop.classList.add("is-hidden");
   refs.adminModal.setAttribute("aria-hidden", "true");
+}
+
+function renderAdminModalContent() {
+  const title = refs.adminModal?.querySelector("#adminModalTitle");
+  if (title) title.textContent = isAdminLoggedIn() ? "관리자 데이터 관리" : "관리자 로그인";
+
+  if (!refs.adminModalBody) return;
+  if (!isAdminLoggedIn()) {
+    refs.adminModalBody.innerHTML = `
+      <p class="admin-modal-desc">비밀번호를 입력하면 AI 기능이 활성화됩니다.<br>관리자 토큰은 현재 브라우저 세션에만 저장됩니다.</p>
+      <form class="admin-modal-form" id="adminLoginForm">
+        <label>
+          관리자 비밀번호
+          <input type="password" id="adminPasswordInput" placeholder="비밀번호 입력" autocomplete="current-password" />
+        </label>
+        <button class="primary-button full-width" type="submit">로그인</button>
+      </form>
+    `;
+    return;
+  }
+
+  refs.adminModalBody.innerHTML = `
+    <div class="admin-session-card">
+      <strong>관리자 세션 활성화</strong>
+      <p>AI 호출, 업무 동기화, 산출물 라이브러리 조회가 가능합니다. 브라우저 세션이 끝나면 토큰은 남지 않습니다.</p>
+    </div>
+    <div class="admin-data-zone">
+      <strong>저장 데이터 관리</strong>
+      <p>서버에 저장된 직원 대화, 업무 보드, 오케스트레이션 실행 기록, 산출물 문서를 초기화합니다. 삭제 후 복구할 수 없습니다.</p>
+      <button class="ghost-button danger full-width" type="button" data-admin-action="clear-server-data">서버 저장 데이터 초기화</button>
+    </div>
+    <button class="ghost-button full-width" type="button" data-admin-action="logout">관리자 로그아웃</button>
+  `;
+}
+
+function handleAdminModalSubmit(event) {
+  if (!event.target.closest("#adminLoginForm")) return;
+  event.preventDefault();
+  const password = event.target.querySelector("#adminPasswordInput")?.value.trim();
+  if (!password) return;
+
+  setAdminToken(password);
+  resetRemoteChatCache();
+  resetRemoteTaskCache();
+  resetRemoteArtifactLibraryCache();
+  closeAdminModal();
+  updateAdminButton();
+  loadRemoteTasksIfNeeded({ force: true });
+  loadRemoteArtifactLibrary({ force: true });
+  if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
+  showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
+}
+
+function handleAdminModalClick(event) {
+  const actionButton = event.target.closest("[data-admin-action]");
+  if (!actionButton) return;
+
+  const action = actionButton.dataset.adminAction;
+  if (action === "logout") {
+    clearAdminToken();
+    resetRemoteChatCache();
+    resetRemoteTaskCache();
+    resetRemoteArtifactLibraryCache();
+    closeAdminModal();
+    updateAdminButton();
+    showToast("관리자 로그아웃 됐습니다.");
+    return;
+  }
+
+  if (action === "clear-server-data") {
+    clearServerAutomationData(actionButton);
+  }
+}
+
+async function clearServerAutomationData(button) {
+  if (!automationStore?.clearAllData || !isAdminLoggedIn()) {
+    showToast("관리자 로그인 후 초기화할 수 있습니다.");
+    return;
+  }
+
+  const firstConfirm = window.confirm("서버에 저장된 직원 대화, 업무, 오케스트레이션 기록, 산출물을 모두 삭제할까요?");
+  if (!firstConfirm) return;
+  const secondConfirm = window.confirm("삭제 후 복구할 수 없습니다. 정말 서버 저장 데이터를 초기화할까요?");
+  if (!secondConfirm) return;
+
+  const previousText = button?.textContent ?? "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "초기화 중...";
+  }
+
+  try {
+    await automationStore.clearAllData();
+    resetAutomationLocalCache();
+    closeAdminModal();
+    render();
+    showToast("서버 저장 데이터와 현재 브라우저 캐시를 초기화했습니다.");
+  } catch (error) {
+    console.warn("clear automation data failed:", error);
+    const message = error?.message === "unauthorized"
+      ? "관리자 로그인이 만료됐습니다. 다시 로그인해 주세요."
+      : "서버 저장 데이터를 초기화하지 못했습니다.";
+    showToast(message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previousText;
+    }
+  }
+}
+
+function resetAutomationLocalCache() {
+  state.tasks = clone(seedTasks).map(hydrateTask);
+  state.chat = {};
+  state.orch = getInitialOrchState();
+  state.selectedTaskId = null;
+  state.detailMode = "summary";
+  syncEmployeeStatusFromActiveTasks();
+  resetRemoteChatCache();
+  resetRemoteTaskCache();
+  resetRemoteArtifactLibraryCache();
+  saveState();
 }
 
 function normalizeBoardFilter(filter) {
@@ -717,21 +836,8 @@ function bindEvents() {
   refs.adminButton?.addEventListener("click", openAdminModal);
   refs.adminModalBackdrop?.addEventListener("click", closeAdminModal);
   refs.adminModalClose?.addEventListener("click", closeAdminModal);
-  refs.adminLoginForm?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const password = refs.adminPasswordInput.value.trim();
-    if (!password) return;
-    setAdminToken(password);
-    resetRemoteChatCache();
-    resetRemoteTaskCache();
-    resetRemoteArtifactLibraryCache();
-    closeAdminModal();
-    updateAdminButton();
-    loadRemoteTasksIfNeeded({ force: true });
-    loadRemoteArtifactLibrary({ force: true });
-    if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
-    showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
-  });
+  refs.adminModal?.addEventListener("submit", handleAdminModalSubmit);
+  refs.adminModal?.addEventListener("click", handleAdminModalClick);
 
   refs.closeOrchestrationButton.addEventListener("click", () => {
     closeOrchestrationPanel();

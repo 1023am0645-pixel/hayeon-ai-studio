@@ -126,6 +126,12 @@ function deleteTask(taskId) {
   });
 }
 
+function clearAllData() {
+  return requestAutomation("/api/automation/data", {
+    method: "DELETE",
+  });
+}
+
 function listChatMessages(employeeId, { limit = 40 } = {}) {
   if (!employeeId) return Promise.resolve({ messages: [] });
   const safeLimit = Math.min(Math.max(Number(limit) || 40, 1), 100);
@@ -158,6 +164,7 @@ window.HayeonAutomationStore = {
   upsertTask,
   listTasks,
   deleteTask,
+  clearAllData,
   listChatMessages,
   createChatMessage,
   isStorageMissing,

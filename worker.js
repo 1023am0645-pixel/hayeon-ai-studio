@@ -66,6 +66,10 @@ async function handleAutomationRoute(request, env, url) {
       return listAutomationArtifacts(env.AGENT_DB, url, context.requestId);
     }
 
+    if (url.pathname === "/api/automation/data" && request.method === "DELETE") {
+      return clearAutomationData(env.AGENT_DB, context.requestId);
+    }
+
     if (url.pathname === "/api/automation/runs" && request.method === "POST") {
       const body = await parseJsonBody(request, context.requestId);
       if (body instanceof Response) return body;
@@ -333,6 +337,29 @@ async function listAutomationArtifacts(db, url, requestId) {
     ok: true,
     text: "",
     data: { artifacts: rows.results ?? [] },
+    requestId,
+  });
+}
+
+async function clearAutomationData(db, requestId) {
+  const tables = [
+    "artifacts",
+    "chat_messages",
+    "tasks",
+    "agent_run_items",
+    "agent_runs",
+  ];
+  const deleted = {};
+
+  for (const table of tables) {
+    const result = await db.prepare(`DELETE FROM ${table}`).run();
+    deleted[table] = Number(result.meta?.changes ?? 0);
+  }
+
+  return json({
+    ok: true,
+    text: "저장된 자동화 데이터를 초기화했습니다.",
+    data: { deleted },
     requestId,
   });
 }
