@@ -2492,6 +2492,48 @@ body::before {
   box-shadow: 0 0 0 3px rgba(63,126,168,.15);
 }
 .admin-modal-form { display: flex; flex-direction: column; gap: 12px; }
+.orch-artifact-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(120px, .9fr) minmax(110px, .8fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--ui-border, rgba(0,0,0,.1));
+  border-radius: 14px;
+  background: var(--ui-surface-strong, rgba(255,255,255,.72));
+}
+.orch-artifact-filters label {
+  display: grid;
+  gap: 5px;
+  color: var(--ui-text, #2b4a63);
+  font-size: .7rem;
+  font-weight: 800;
+}
+.orch-artifact-filters input,
+.orch-artifact-filters select {
+  min-height: 34px;
+  border: 1px solid var(--ui-border, rgba(0,0,0,.14));
+  border-radius: 10px;
+  background: rgba(255,255,255,.86);
+  color: var(--ui-text, #2b4a63);
+  font-size: .78rem;
+}
+.orch-artifact-filters button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border, rgba(0,0,0,.14));
+  border-radius: 10px;
+  background: var(--ui-surface, rgba(255,255,255,.8));
+  color: var(--ui-text, #2b4a63);
+  font-size: .74rem;
+  font-weight: 800;
+}
+@media (max-width: 720px) {
+  .orch-artifact-filters {
+    grid-template-columns: 1fr;
+  }
+}
 .admin-session-card,
 .admin-data-zone {
   display: grid;

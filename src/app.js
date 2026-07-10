@@ -24,6 +24,11 @@ let remoteTasksLoading = false;
 let remoteArtifactLibrary = [];
 let remoteArtifactLibraryLoaded = false;
 let remoteArtifactLibraryLoading = false;
+let artifactLibraryFilters = {
+  query: "",
+  employeeId: "all",
+  artifactType: "all",
+};
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -853,6 +858,8 @@ function bindEvents() {
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationArtifactAction);
+  refs.orchestrationResults.addEventListener("input", handleArtifactLibraryFilterInput);
+  refs.orchestrationResults.addEventListener("change", handleArtifactLibraryFilterInput);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationDetailClick);
   refs.orchestrationProgress.addEventListener("keydown", handleOrchestrationDetailKeydown);
@@ -1800,6 +1807,12 @@ async function handleOrchestrationArtifactAction(event) {
     return;
   }
 
+  if (action === "reset-artifact-filters") {
+    resetArtifactLibraryFilters();
+    renderStoredOrchestrationPanel();
+    return;
+  }
+
   if (action === "copy-artifact" || action === "download-artifact") {
     const artifact = findOrchestrationArtifact(actionButton.dataset.artifactId);
     if (!artifact) return;
@@ -2119,7 +2132,7 @@ function renderRemoteArtifactLibrary() {
     return `<p class="orch-empty">최근 산출물 라이브러리를 불러오는 중입니다.</p>`;
   }
   if (!remoteArtifactLibrary.length) return "";
-  return renderOrchestrationArtifacts(remoteArtifactLibrary);
+  return renderOrchestrationArtifacts(remoteArtifactLibrary, { filterable: true, scope: "remote" });
 }
 
 function buildStoredOrchestrationResult() {
@@ -2365,9 +2378,27 @@ function renderOrchestrationResults(result) {
   `;
 }
 
-function renderOrchestrationArtifacts(artifacts = []) {
+function renderOrchestrationArtifacts(artifacts = [], options = {}) {
   if (!artifacts.length) return "";
-  const rows = artifacts.map((artifact) => {
+  const { filterable = false, scope = "run" } = options;
+  const visibleArtifacts = filterable ? filterOrchestrationArtifacts(artifacts) : artifacts;
+  const controls = filterable ? renderArtifactLibraryFilters(artifacts) : "";
+  const rows = renderArtifactCards(visibleArtifacts);
+
+  return `
+    <section class="orch-artifact-library" data-artifact-scope="${escapeHtml(scope)}" aria-label="오케스트레이션 산출물 라이브러리">
+      <div class="orch-artifact-library-head">
+        <strong>산출물 라이브러리</strong>
+        <span data-artifact-visible-count>${filterable ? `${visibleArtifacts.length}/${artifacts.length}` : artifacts.length}개 문서</span>
+      </div>
+      ${controls}
+      <div class="orch-artifact-list">${rows || "<p class=\"orch-empty\">조건에 맞는 산출물이 없습니다.</p>"}</div>
+    </section>
+  `;
+}
+
+function renderArtifactCards(artifacts = []) {
+  return artifacts.map((artifact) => {
     const employee = getEmployee(artifact.employeeId);
     const updatedAt = formatRemoteDate(artifact.updatedAt || artifact.createdAt);
     const meta = [
@@ -2392,16 +2423,126 @@ function renderOrchestrationArtifacts(artifacts = []) {
       </article>
     `;
   }).join("");
+}
+
+function renderArtifactLibraryFilters(artifacts = []) {
+  const employeeOptions = buildArtifactFilterOptions(artifacts, "employee");
+  const typeOptions = buildArtifactFilterOptions(artifacts, "type");
 
   return `
-    <section class="orch-artifact-library" aria-label="오케스트레이션 산출물 라이브러리">
-      <div class="orch-artifact-library-head">
-        <strong>산출물 라이브러리</strong>
-        <span>${artifacts.length}개 문서</span>
-      </div>
-      <div class="orch-artifact-list">${rows}</div>
-    </section>
+    <div class="orch-artifact-filters" aria-label="산출물 검색 필터">
+      <label>
+        <span>검색</span>
+        <input
+          type="search"
+          data-artifact-filter="query"
+          placeholder="제목, 담당자, 본문 검색"
+          value="${escapeHtml(artifactLibraryFilters.query)}"
+        />
+      </label>
+      <label>
+        <span>직원</span>
+        <select data-artifact-filter="employeeId">
+          <option value="all">전체 직원</option>
+          ${employeeOptions.map((option) => `
+            <option value="${escapeHtml(option.value)}" ${artifactLibraryFilters.employeeId === option.value ? "selected" : ""}>
+              ${escapeHtml(option.label)}
+            </option>
+          `).join("")}
+        </select>
+      </label>
+      <label>
+        <span>유형</span>
+        <select data-artifact-filter="artifactType">
+          <option value="all">전체 유형</option>
+          ${typeOptions.map((option) => `
+            <option value="${escapeHtml(option.value)}" ${artifactLibraryFilters.artifactType === option.value ? "selected" : ""}>
+              ${escapeHtml(option.label)}
+            </option>
+          `).join("")}
+        </select>
+      </label>
+      <button type="button" data-orch-artifact-action="reset-artifact-filters">필터 초기화</button>
+    </div>
   `;
+}
+
+function buildArtifactFilterOptions(artifacts = [], type) {
+  const map = new Map();
+  artifacts.forEach((artifact) => {
+    if (type === "employee") {
+      const value = artifact.employeeId || "unknown";
+      const employee = getEmployee(value);
+      const label = employee?.name || artifact.metadata?.employeeName || "미지정";
+      map.set(value, label);
+      return;
+    }
+
+    const value = artifact.artifactType || "markdown";
+    map.set(value, value);
+  });
+
+  return [...map.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "ko"));
+}
+
+function filterOrchestrationArtifacts(artifacts = []) {
+  const query = artifactLibraryFilters.query.trim().toLowerCase();
+  return artifacts.filter((artifact) => {
+    if (artifactLibraryFilters.employeeId !== "all" && (artifact.employeeId || "unknown") !== artifactLibraryFilters.employeeId) {
+      return false;
+    }
+    if (artifactLibraryFilters.artifactType !== "all" && (artifact.artifactType || "markdown") !== artifactLibraryFilters.artifactType) {
+      return false;
+    }
+    if (!query) return true;
+
+    const employee = getEmployee(artifact.employeeId);
+    const searchable = [
+      artifact.title,
+      artifact.artifactType,
+      artifact.contentText,
+      artifact.metadata?.employeeName,
+      artifact.metadata?.goal,
+      employee?.name,
+      employee?.role,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return searchable.includes(query);
+  });
+}
+
+function handleArtifactLibraryFilterInput(event) {
+  const control = event.target.closest("[data-artifact-filter]");
+  if (!control) return;
+
+  const key = control.dataset.artifactFilter;
+  if (!Object.prototype.hasOwnProperty.call(artifactLibraryFilters, key)) return;
+  artifactLibraryFilters = {
+    ...artifactLibraryFilters,
+    [key]: control.value,
+  };
+  updateRemoteArtifactLibraryList();
+}
+
+function updateRemoteArtifactLibraryList() {
+  const library = refs.orchestrationResults.querySelector("[data-artifact-scope='remote']");
+  if (!library) return;
+
+  const filtered = filterOrchestrationArtifacts(remoteArtifactLibrary);
+  const countNode = library.querySelector("[data-artifact-visible-count]");
+  if (countNode) countNode.textContent = `${filtered.length}/${remoteArtifactLibrary.length}개 문서`;
+
+  const list = library.querySelector(".orch-artifact-list");
+  if (list) list.innerHTML = renderArtifactCards(filtered) || "<p class=\"orch-empty\">조건에 맞는 산출물이 없습니다.</p>";
+}
+
+function resetArtifactLibraryFilters() {
+  artifactLibraryFilters = {
+    query: "",
+    employeeId: "all",
+    artifactType: "all",
+  };
 }
 
 function openFloorDetail(floorId) {
@@ -2515,6 +2656,7 @@ function resetRemoteArtifactLibraryCache() {
   remoteArtifactLibrary = [];
   remoteArtifactLibraryLoaded = false;
   remoteArtifactLibraryLoading = false;
+  resetArtifactLibraryFilters();
 }
 
 function scrollAppToTop() {
