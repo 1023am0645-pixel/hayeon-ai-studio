@@ -2534,6 +2534,22 @@ body::before {
     grid-template-columns: 1fr;
   }
 }
+.orch-artifact-preview {
+  max-height: 360px;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--ui-border, rgba(0,0,0,.12));
+  border-radius: 14px;
+  background: rgba(255,255,255,.72);
+  color: var(--ui-text, #2b4a63);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: .76rem;
+  line-height: 1.65;
+}
 .admin-session-card,
 .admin-data-zone {
   display: grid;

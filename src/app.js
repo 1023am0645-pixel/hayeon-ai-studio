@@ -1813,6 +1813,11 @@ async function handleOrchestrationArtifactAction(event) {
     return;
   }
 
+  if (action === "open-artifact") {
+    openOrchestrationArtifactDetail(actionButton.dataset.artifactId);
+    return;
+  }
+
   if (action === "copy-artifact" || action === "download-artifact") {
     const artifact = findOrchestrationArtifact(actionButton.dataset.artifactId);
     if (!artifact) return;
@@ -2025,9 +2030,48 @@ function openOrchestrationDetail(key) {
   refs.orchestrationDetail.classList.remove("is-hidden");
 }
 
+function openOrchestrationArtifactDetail(id) {
+  const artifact = findOrchestrationArtifact(id);
+  if (!artifact) return;
+
+  const employee = getEmployee(artifact.employeeId);
+  const updatedAt = formatRemoteDate(artifact.updatedAt || artifact.createdAt);
+  const meta = [
+    employee?.name || artifact.metadata?.employeeName || "AI 직원",
+    artifact.artifactType || "markdown",
+    updatedAt,
+  ].filter(Boolean).join(" · ");
+  const goal = artifact.metadata?.goal ? `
+    <section>
+      <span>연결 목표</span>
+      <p>${escapeHtml(artifact.metadata.goal)}</p>
+    </section>
+  ` : "";
+
+  refs.orchestrationDetailContent.innerHTML = `
+    <div class="orch-detail-meta">
+      <span class="orch-detail-status is-done">문서</span>
+      <strong>${escapeHtml(artifact.title || "AI 직원 산출물")}</strong>
+      <em>${escapeHtml(meta)}</em>
+    </div>
+    ${goal}
+    <section>
+      <span>본문 미리보기</span>
+      <pre class="orch-artifact-preview">${escapeHtml(getArtifactContent(artifact))}</pre>
+    </section>
+    <div class="orch-detail-actions">
+      <button type="button" data-orch-artifact-action="copy-artifact" data-artifact-id="${escapeHtml(artifact.id)}">문서 복사</button>
+      <button type="button" data-orch-artifact-action="download-artifact" data-artifact-id="${escapeHtml(artifact.id)}">Markdown 저장</button>
+    </div>
+  `;
+  refs.orchestrationDetail.dataset.artifactId = id;
+  refs.orchestrationDetail.classList.remove("is-hidden");
+}
+
 function closeOrchestrationDetail() {
   refs.orchestrationDetail.classList.add("is-hidden");
   refs.orchestrationDetail.removeAttribute("data-orch-key");
+  refs.orchestrationDetail.removeAttribute("data-artifact-id");
   refs.orchestrationDetailContent.innerHTML = "";
 }
 
@@ -2417,6 +2461,7 @@ function renderArtifactCards(artifacts = []) {
           <p>${escapeHtml(preview || "저장된 본문이 없습니다.")}</p>
         </div>
         <div class="orch-artifact-actions">
+          <button type="button" data-orch-artifact-action="open-artifact" data-artifact-id="${escapeHtml(artifact.id)}">보기</button>
           <button type="button" data-orch-artifact-action="copy-artifact" data-artifact-id="${escapeHtml(artifact.id)}">복사</button>
           <button type="button" data-orch-artifact-action="download-artifact" data-artifact-id="${escapeHtml(artifact.id)}">저장</button>
         </div>
