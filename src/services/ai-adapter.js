@@ -164,6 +164,64 @@ function buildEmployeePrompt(employee, taskText) {
   };
 }
 
+const orchestrationHandoffLimits = {
+  perItem: 520,
+  total: 2600,
+};
+
+function compactOrchestrationHandoffText(text = "", maxLength = orchestrationHandoffLimits.perItem) {
+  const normalized = String(text ?? "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(시스템 프롬프트|출력 규칙|공통 응답 원칙)/.test(line))
+    .join("\n");
+
+  if (normalized.length <= maxLength) return normalized;
+
+  const lines = normalized.split("\n");
+  const picked = [];
+  let used = 0;
+  for (const line of lines) {
+    const next = line.length + (picked.length ? 1 : 0);
+    if (used + next > maxLength - 28) break;
+    picked.push(line);
+    used += next;
+  }
+
+  const compacted = picked.join("\n").trim();
+  return `${compacted || normalized.slice(0, maxLength - 28).trim()}\n...핵심만 일부 발췌`;
+}
+
+function makeHandoffSummary(result, order = 0) {
+  if (!result) return "";
+  const heading = `${order + 1}. ${result.employeeName || result.employeeId || "직원"}: ${result.subtask || "세부 업무"}`;
+  if (result.error) return `${heading}\n- 오류: ${compactOrchestrationHandoffText(result.error, 260)}`;
+  if (result.text) return `${heading}\n${compactOrchestrationHandoffText(result.text)}`;
+  return "";
+}
+
+function appendHandoffContext(context, summary) {
+  if (!summary) return context;
+  const next = [context, summary].filter(Boolean).join("\n\n");
+  if (next.length <= orchestrationHandoffLimits.total) return next;
+  return `${next.slice(0, orchestrationHandoffLimits.total - 35).trim()}\n\n- 길이 제한으로 이후 내용 생략`;
+}
+
+function buildSequentialTaskText(subtask, context) {
+  if (!context) return subtask;
+  return [
+    subtask,
+    "",
+    "[이전 단계 핵심 핸드오프]",
+    context,
+    "",
+    "위 내용은 길이 제한이 적용된 요약본입니다. 필요한 정보가 없으면 지어내지 말고 '확인 필요:'로 표시하세요.",
+    "앞 단계 산출물을 참고하되, 당신의 역할에 맞는 결과만 정리해 주세요.",
+  ].join("\n");
+}
+
 function createSimulatedReply(employee, message) {
   const prompt = buildEmployeePrompt(employee, message);
   const role = employee.role ?? "";
@@ -532,6 +590,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
 
   const plan = await planTasks(cleanGoal, employees);
   const results = [];
+  let handoffContext = "";
 
   for (let index = 0; index < plan.length; index += 1) {
     const item = plan[index];
@@ -542,7 +601,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
     onUpdate?.({ phase: "start", key: itemKey, employee, subtask: item.subtask });
 
     try {
-      const text = await requestEmployeeReply(employee, item.subtask);
+      const text = await requestEmployeeReply(employee, buildSequentialTaskText(item.subtask, handoffContext));
       const result = {
         key: itemKey,
         employeeId: employee.id,
@@ -552,6 +611,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
         text,
       };
       results.push(result);
+      handoffContext = appendHandoffContext(handoffContext, makeHandoffSummary(result, index));
       onUpdate?.({ phase: "done", key: itemKey, employee, subtask: item.subtask, text });
     } catch (err) {
       const error = err && err.message ? err.message : String(err);
@@ -565,6 +625,7 @@ async function runOrchestration(goal, employees, { onUpdate } = {}) {
         error,
       };
       results.push(result);
+      handoffContext = appendHandoffContext(handoffContext, makeHandoffSummary(result, index));
       onUpdate?.({ phase: "error", key: itemKey, employee, subtask: item.subtask, error });
     }
   }

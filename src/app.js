@@ -149,6 +149,10 @@ const uiThemes = ["aurora", "light", "dark"];
 const adminTokenKey = "hayeon-admin-token";
 try { localStorage.removeItem(adminTokenKey); } catch {}
 const boardFilters = ["all", "todo", "doing", "review", "done"];
+const orchestrationHandoffLimits = {
+  perItem: 520,
+  total: 2600,
+};
 const orchestrationTemplates = [
   {
     id: "lecture-prep",
@@ -1694,6 +1698,8 @@ function serializeRemoteOrchestrationItem(item) {
     metadata: {
       phase: item.phase,
       taskId: item.taskId,
+      sequenceOrder: Number.isFinite(item.order) ? item.order : 0,
+      handoffSummary: makeOrchestrationHandoffSummary(item),
       scenarioId: state.orch.scenarioId ?? "",
       scenarioLabel: state.orch.scenarioLabel ?? "",
       artifactType: state.orch.artifactType ?? "markdown",
@@ -1722,6 +1728,8 @@ function serializeRemoteOrchestrationArtifact(item) {
       phase: item.phase,
       employeeName: item.name || employee?.name || item.employeeId,
       role: employee?.role ?? "",
+      sequenceOrder: Number.isFinite(item.order) ? item.order : 0,
+      handoffSummary: makeOrchestrationHandoffSummary(item),
       scenarioId: state.orch.scenarioId ?? "",
       scenarioLabel: state.orch.scenarioLabel ?? "",
       artifactType,
@@ -2358,6 +2366,8 @@ function buildOrchestrationItemMarkdown(item) {
     `- 역할: ${employee?.role || "역할 정보 없음"}`,
     `- 상태: ${statusLabel}`,
   ];
+  if (Number.isFinite(item.order)) metaLines.push(`- 실행 순서: ${item.order + 1}번째`);
+  const handoffSummary = makeOrchestrationHandoffSummary(item);
   if (state.orch.remoteRunId) metaLines.push(`- 실행 ID: ${state.orch.remoteRunId}`);
   const qualityLines = getArtifactQualityChecklist(artifactType).map((item) => `- [ ] ${item}`);
 
@@ -2369,6 +2379,12 @@ function buildOrchestrationItemMarkdown(item) {
     "## 지시",
     "",
     item.subtask || "등록된 지시가 없습니다.",
+    ...(handoffSummary ? [
+      "",
+      "## 핸드오프 요약",
+      "",
+      handoffSummary,
+    ] : []),
     "",
     "## 검수 체크리스트",
     "",
@@ -4724,20 +4740,56 @@ function getOrderedOrchestrationItems() {
     });
 }
 
+function compactOrchestrationHandoffText(text = "", maxLength = orchestrationHandoffLimits.perItem) {
+  const normalized = String(text ?? "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(시스템 프롬프트|출력 규칙|공통 응답 원칙)/.test(line))
+    .join("\n");
+
+  if (normalized.length <= maxLength) return normalized;
+
+  const lines = normalized.split("\n");
+  const picked = [];
+  let used = 0;
+  for (const line of lines) {
+    const next = line.length + (picked.length ? 1 : 0);
+    if (used + next > maxLength - 28) break;
+    picked.push(line);
+    used += next;
+  }
+
+  const compacted = picked.join("\n").trim();
+  return `${compacted || normalized.slice(0, maxLength - 28).trim()}\n...핵심만 일부 발췌`;
+}
+
+function makeOrchestrationHandoffSummary(item = {}) {
+  const order = Number.isFinite(item.order) ? item.order + 1 : "";
+  const name = item.name || getEmployee(item.employeeId)?.name || item.employeeId || "직원";
+  const heading = `${order ? `${order}. ` : ""}${name}: ${item.subtask || "세부 업무"}`;
+
+  if (item.status === "skipped") return `${heading}\n- 건너뜀`;
+  if (item.status === "error") return `${heading}\n- 오류: ${compactOrchestrationHandoffText(item.error, 260)}`;
+  if (item.status === "done" && item.text) return `${heading}\n${compactOrchestrationHandoffText(item.text)}`;
+  return "";
+}
+
 function buildOrchestrationContextBefore(key) {
   const rows = [];
+  let used = 0;
   for (const item of getOrderedOrchestrationItems()) {
     if (item.key === key) break;
-    if (item.status === "skipped") {
-      rows.push(`- ${item.name}: 건너뜀`);
-      continue;
+    const summary = makeOrchestrationHandoffSummary(item);
+    if (!summary) continue;
+    const nextLength = summary.length + (rows.length ? 2 : 0);
+    if (used + nextLength > orchestrationHandoffLimits.total) {
+      rows.push("- 이전 단계가 더 있지만 길이 제한으로 핵심 핸드오프에서 생략했습니다.");
+      break;
     }
-    if (item.status === "done" && item.text) {
-      rows.push(`- ${item.name} / ${item.subtask}\n${item.text}`);
-    }
-    if (item.status === "error" && item.error) {
-      rows.push(`- ${item.name} / ${item.subtask}\n오류: ${item.error}`);
-    }
+    rows.push(summary);
+    used += nextLength;
   }
   return rows.join("\n\n");
 }
@@ -4748,10 +4800,11 @@ function buildSequentialOrchestrationPrompt(item) {
   return [
     item.subtask,
     "",
-    "[이전 단계 산출물]",
+    "[이전 단계 핵심 핸드오프]",
     context,
     "",
-    "위 산출물을 참고하되, 당신의 역할에 맞는 결과만 정리해 주세요.",
+    "위 내용은 길이 제한이 적용된 요약본입니다. 필요한 정보가 없으면 지어내지 말고 '확인 필요:'로 표시하세요.",
+    "앞 단계 산출물을 참고하되, 당신의 역할에 맞는 결과만 정리해 주세요.",
   ].join("\n");
 }
 
