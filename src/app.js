@@ -209,6 +209,14 @@ const artifactTypeLabels = {
   "automation-template": "자동화 템플릿",
   markdown: "일반 문서",
 };
+const artifactQualityChecks = {
+  "lecture-plan": ["강의 목표와 대상이 드러나는가", "도입-전개-실습-마무리 흐름이 있는가", "PPT 구성이나 실습/리허설 체크가 포함됐는가"],
+  "review-summary": ["실제 후기/반응을 지어내지 않았는가", "강점과 개선점이 분리됐는가", "다음 강의에 반영할 액션이 있는가"],
+  "ax-report": ["활동 개요와 추진 내용이 구분됐는가", "성과와 증빙/산출물이 연결됐는가", "근거 없는 수치나 링크를 만들지 않았는가"],
+  "app-spec": ["사용자 문제와 핵심 화면이 분리됐는가", "기능 요구사항과 데이터가 구체적인가", "우선순위와 검수 기준이 있는가"],
+  "automation-template": ["시작 조건과 입력값이 명확한가", "처리 순서와 출력물이 복사 가능하게 정리됐는가", "검수 기준과 예외 상황이 포함됐는가"],
+  markdown: ["바로 복사해 쓸 수 있는 구조인가", "확인 필요 항목이 명확한가", "다음 액션이 구체적인가"],
+};
 let state = loadState();
 let bubbleTick = 0;
 let orgViewMode = "card";
@@ -1563,6 +1571,14 @@ function getArtifactTypeLabel(type) {
   return artifactTypeLabels[type] ?? artifactTypeLabels.markdown;
 }
 
+function getArtifactQualityChecklist(type) {
+  return artifactQualityChecks[type] ?? artifactQualityChecks.markdown;
+}
+
+function getArtifactTypeFromArtifact(artifact = {}) {
+  return artifact.artifactType || artifact.metadata?.artifactType || "markdown";
+}
+
 function inferArtifactType(item = {}) {
   const employeeId = item.employeeId ?? "";
   const text = [
@@ -2089,10 +2105,11 @@ function openOrchestrationArtifactDetail(id) {
   if (!artifact) return;
 
   const employee = getEmployee(artifact.employeeId);
+  const artifactType = getArtifactTypeFromArtifact(artifact);
   const updatedAt = formatRemoteDate(artifact.updatedAt || artifact.createdAt);
   const meta = [
     employee?.name || artifact.metadata?.employeeName || "AI 직원",
-    artifact.artifactType || "markdown",
+    getArtifactTypeLabel(artifactType),
     updatedAt,
   ].filter(Boolean).join(" · ");
   const goal = artifact.metadata?.goal ? `
@@ -2101,6 +2118,7 @@ function openOrchestrationArtifactDetail(id) {
       <p>${escapeHtml(artifact.metadata.goal)}</p>
     </section>
   ` : "";
+  const checklist = getArtifactQualityChecklist(artifactType);
 
   refs.orchestrationDetailContent.innerHTML = `
     <div class="orch-detail-meta">
@@ -2109,6 +2127,12 @@ function openOrchestrationArtifactDetail(id) {
       <em>${escapeHtml(meta)}</em>
     </div>
     ${goal}
+    <section>
+      <span>검수 체크리스트</span>
+      <ul class="orch-quality-list">
+        ${checklist.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+    </section>
     <section>
       <span>본문 미리보기</span>
       <pre class="orch-artifact-preview">${escapeHtml(getArtifactContent(artifact))}</pre>
@@ -2271,6 +2295,7 @@ function buildOrchestrationItemMarkdown(item) {
     `- 상태: ${statusLabel}`,
   ];
   if (state.orch.remoteRunId) metaLines.push(`- 실행 ID: ${state.orch.remoteRunId}`);
+  const qualityLines = getArtifactQualityChecklist(artifactType).map((item) => `- [ ] ${item}`);
 
   return [
     `# ${item.isSummary ? "오케스트레이션 종합 요약" : (item.subtask || "AI 직원 산출물")}`,
@@ -2280,6 +2305,10 @@ function buildOrchestrationItemMarkdown(item) {
     "## 지시",
     "",
     item.subtask || "등록된 지시가 없습니다.",
+    "",
+    "## 검수 체크리스트",
+    "",
+    ...qualityLines,
     "",
     item.error ? "## 오류" : "## 결과",
     "",
@@ -2500,10 +2529,11 @@ function renderOrchestrationArtifacts(artifacts = [], options = {}) {
 function renderArtifactCards(artifacts = []) {
   return artifacts.map((artifact) => {
     const employee = getEmployee(artifact.employeeId);
+    const artifactType = getArtifactTypeFromArtifact(artifact);
     const updatedAt = formatRemoteDate(artifact.updatedAt || artifact.createdAt);
     const meta = [
       employee?.name || artifact.metadata?.employeeName || "AI 직원",
-      getArtifactTypeLabel(artifact.artifactType || artifact.metadata?.artifactType || "markdown"),
+      getArtifactTypeLabel(artifactType),
       updatedAt,
     ].filter(Boolean).join(" · ");
     const preview = getArtifactContent(artifact).replace(/^# .+\n+/, "").trim().slice(0, 180);
@@ -2579,7 +2609,7 @@ function buildArtifactFilterOptions(artifacts = [], type) {
       return;
     }
 
-    const value = artifact.artifactType || "markdown";
+    const value = getArtifactTypeFromArtifact(artifact);
     map.set(value, getArtifactTypeLabel(value));
   });
 
@@ -2594,7 +2624,7 @@ function filterOrchestrationArtifacts(artifacts = []) {
     if (artifactLibraryFilters.employeeId !== "all" && (artifact.employeeId || "unknown") !== artifactLibraryFilters.employeeId) {
       return false;
     }
-    if (artifactLibraryFilters.artifactType !== "all" && (artifact.artifactType || "markdown") !== artifactLibraryFilters.artifactType) {
+    if (artifactLibraryFilters.artifactType !== "all" && getArtifactTypeFromArtifact(artifact) !== artifactLibraryFilters.artifactType) {
       return false;
     }
     if (!query) return true;
@@ -2602,7 +2632,7 @@ function filterOrchestrationArtifacts(artifacts = []) {
     const employee = getEmployee(artifact.employeeId);
     const searchable = [
       artifact.title,
-      artifact.artifactType,
+      getArtifactTypeLabel(getArtifactTypeFromArtifact(artifact)),
       artifact.contentText,
       artifact.metadata?.employeeName,
       artifact.metadata?.goal,

@@ -2550,6 +2550,34 @@ body::before {
   font-size: .76rem;
   line-height: 1.65;
 }
+.orch-quality-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border, rgba(0,0,0,.1));
+  border-radius: 14px;
+  background: rgba(255,255,255,.62);
+  list-style: none;
+}
+.orch-quality-list li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--ui-text, #2b4a63);
+  font-size: .76rem;
+  line-height: 1.45;
+}
+.orch-quality-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .42em;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--ui-accent, #3f7ea8);
+  border-radius: 3px;
+  background: rgba(255,255,255,.72);
+}
 .admin-session-card,
 .admin-data-zone {
   display: grid;
