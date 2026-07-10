@@ -19,6 +19,8 @@ const {
 const automationStore = window.HayeonAutomationStore ?? null;
 const remoteChatLoadedEmployeeIds = new Set();
 const remoteChatLoadingEmployeeIds = new Set();
+let remoteTasksLoaded = false;
+let remoteTasksLoading = false;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -218,6 +220,7 @@ function boot() {
   renderOrchestrationTemplates();
   updateClock();
   render();
+  loadRemoteTasksIfNeeded();
   setInterval(updateClock, 30_000);
   setInterval(applyTimePhase, 60_000);
   setInterval(() => {
@@ -415,6 +418,7 @@ function openAdminModal() {
   if (loggedIn) {
     localStorage.removeItem(adminTokenKey);
     resetRemoteChatCache();
+    resetRemoteTaskCache();
     updateAdminButton();
     showToast("관리자 로그아웃 됐습니다.");
     return;
@@ -688,8 +692,10 @@ function bindEvents() {
     if (!password) return;
     localStorage.setItem(adminTokenKey, password);
     resetRemoteChatCache();
+    resetRemoteTaskCache();
     closeAdminModal();
     updateAdminButton();
+    loadRemoteTasksIfNeeded({ force: true });
     if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
     showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
   });
@@ -727,6 +733,7 @@ function openTaskForm() {
 }
 
 function openTaskDrawer() {
+  loadRemoteTasksIfNeeded({ force: true });
   refs.taskDrawer.classList.remove("is-hidden");
   refs.taskDrawerBackdrop.classList.remove("is-hidden");
   refs.taskDrawer.setAttribute("aria-hidden", "false");
@@ -1425,6 +1432,90 @@ function serializeRemoteOrchestrationArtifact(item) {
 function syncRemoteTask(task) {
   if (!automationStore?.upsertTask || !task || !isAdminLoggedIn()) return;
   void automationStore.upsertTask(serializeRemoteTask(task)).catch(handleRemoteTaskSyncError);
+}
+
+function loadRemoteTasksIfNeeded({ force = false } = {}) {
+  if (!automationStore?.listTasks || !isAdminLoggedIn()) return;
+  if (remoteTasksLoading) return;
+  if (remoteTasksLoaded && !force) return;
+
+  remoteTasksLoading = true;
+  void automationStore.listTasks({ limit: 160 })
+    .then((data) => {
+      const changed = mergeRemoteTasks(data?.tasks ?? []);
+      remoteTasksLoaded = true;
+      if (changed) {
+        syncEmployeeStatusFromActiveTasks();
+        saveState();
+        renderStats();
+        renderKanban();
+        renderEmployeeDetail();
+      }
+    })
+    .catch(handleRemoteTaskSyncError)
+    .finally(() => { remoteTasksLoading = false; });
+}
+
+function mergeRemoteTasks(remoteTasks = []) {
+  if (!Array.isArray(remoteTasks) || !remoteTasks.length) return false;
+  let changed = false;
+  state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
+
+  remoteTasks.forEach((remoteTask) => {
+    const task = hydrateRemoteTask(remoteTask);
+    if (!task.id || !task.title) return;
+    const index = state.tasks.findIndex((item) => item.id === task.id);
+    if (index >= 0) {
+      state.tasks[index] = {
+        ...state.tasks[index],
+        ...task,
+        tags: task.tags.length ? task.tags : state.tasks[index].tags,
+      };
+    } else {
+      state.tasks.unshift(task);
+    }
+    changed = true;
+  });
+
+  state.tasks.sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+  return changed;
+}
+
+function hydrateRemoteTask(remoteTask = {}) {
+  const metadata = safeParseJson(remoteTask.metadata_json);
+  const tags = Array.isArray(metadata.tags)
+    ? metadata.tags
+    : normalizeTags(String(metadata.tags ?? ""));
+  const dueDate = String(remoteTask.due_at ?? "").slice(0, 10);
+  const priority = ["high", "medium", "low"].includes(remoteTask.priority) ? remoteTask.priority : "medium";
+  return hydrateTask({
+    id: remoteTask.id,
+    title: remoteTask.title,
+    assigneeId: remoteTask.employee_id ?? "",
+    status: taskColumns.some((column) => column.id === remoteTask.status) ? remoteTask.status : "todo",
+    priority,
+    dueDate,
+    tags,
+    source: metadata.source ?? (remoteTask.source_run_id ? "orchestration" : "manual"),
+    orchestrationRunId: remoteTask.source_run_id ?? "",
+    orchestrationGoal: metadata.orchestrationGoal ?? remoteTask.description ?? "",
+    resultText: remoteTask.result_text ?? "",
+    resultError: remoteTask.result_error ?? "",
+    createdAt: remoteTask.created_at ?? "",
+    updatedAt: remoteTask.updated_at ?? "",
+    completedAt: remoteTask.completed_at ?? "",
+  });
+}
+
+function syncEmployeeStatusFromActiveTasks() {
+  state.employees.forEach((employee) => {
+    const activeTask = state.tasks.find((task) =>
+      task.assigneeId === employee.id && (task.status === "doing" || task.status === "review")
+    );
+    if (!activeTask) return;
+    employee.currentTaskId = activeTask.id;
+    employee.status = activeTask.status === "review" ? "review" : "working";
+  });
 }
 
 function serializeRemoteTask(task) {
@@ -2235,6 +2326,11 @@ function handleRemoteChatSyncError(error) {
 function resetRemoteChatCache() {
   remoteChatLoadedEmployeeIds.clear();
   remoteChatLoadingEmployeeIds.clear();
+}
+
+function resetRemoteTaskCache() {
+  remoteTasksLoaded = false;
+  remoteTasksLoading = false;
 }
 
 function scrollAppToTop() {

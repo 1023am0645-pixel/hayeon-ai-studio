@@ -68,10 +68,15 @@ async function handleAutomationRoute(request, env, url) {
       return createAutomationRun(env.AGENT_DB, body, context.requestId);
     }
 
-    if (url.pathname === "/api/automation/tasks" && request.method === "POST") {
-      const body = await parseJsonBody(request, context.requestId);
-      if (body instanceof Response) return body;
-      return upsertAutomationTask(env.AGENT_DB, body, context.requestId);
+    if (url.pathname === "/api/automation/tasks") {
+      if (request.method === "GET") {
+        return listAutomationTasks(env.AGENT_DB, url, context.requestId);
+      }
+      if (request.method === "POST") {
+        const body = await parseJsonBody(request, context.requestId);
+        if (body instanceof Response) return body;
+        return upsertAutomationTask(env.AGENT_DB, body, context.requestId);
+      }
     }
 
     const chatMatch = url.pathname.match(/^\/api\/automation\/chat\/([^/]+)$/);
@@ -537,6 +542,48 @@ async function upsertAutomationTask(db, body, requestId) {
         updatedAt: now,
         completedAt,
       },
+    },
+    requestId,
+  });
+}
+
+async function listAutomationTasks(db, url, requestId) {
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 200);
+  const statusParam = normalizeId(url.searchParams.get("status"), 40);
+  const employeeId = normalizeId(url.searchParams.get("employeeId") ?? url.searchParams.get("employee_id"), 120);
+  const sourceRunId = normalizeId(url.searchParams.get("sourceRunId") ?? url.searchParams.get("source_run_id"), 120);
+  const clauses = [];
+  const binds = [];
+
+  if (statusParam && statusParam !== "all") {
+    const status = normalizeBoardTaskStatus(statusParam, "");
+    if (status) {
+      clauses.push("status = ?");
+      binds.push(status);
+    }
+  }
+  if (employeeId) {
+    clauses.push("employee_id = ?");
+    binds.push(employeeId);
+  }
+  if (sourceRunId) {
+    clauses.push("source_run_id = ?");
+    binds.push(sourceRunId);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await db.prepare(`
+    SELECT * FROM tasks
+    ${where}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      tasks: rows.results ?? [],
     },
     requestId,
   });

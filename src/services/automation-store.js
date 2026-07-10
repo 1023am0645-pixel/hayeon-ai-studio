@@ -92,6 +92,15 @@ function upsertTask(task) {
   });
 }
 
+function listTasks({ limit = 100, status = "all", employeeId = "", sourceRunId = "" } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(Math.min(Math.max(Number(limit) || 100, 1), 200)));
+  if (status && status !== "all") params.set("status", status);
+  if (employeeId) params.set("employeeId", employeeId);
+  if (sourceRunId) params.set("sourceRunId", sourceRunId);
+  return requestAutomation(`/api/automation/tasks?${params.toString()}`);
+}
+
 function listChatMessages(employeeId, { limit = 40 } = {}) {
   if (!employeeId) return Promise.resolve({ messages: [] });
   const safeLimit = Math.min(Math.max(Number(limit) || 40, 1), 100);
@@ -121,6 +130,7 @@ window.HayeonAutomationStore = {
   upsertRunItem,
   upsertArtifact,
   upsertTask,
+  listTasks,
   listChatMessages,
   createChatMessage,
   isStorageMissing,
