@@ -49,6 +49,78 @@ function getAgentQualityGuide(employee) {
   return agentQualityGuides[employee.id] ?? "맡은 역할에 맞춰 실제 업무에 바로 쓸 수 있는 결과와 다음 행동을 제안한다.";
 }
 
+function inferWorkScenario(employee, taskText = "") {
+  const employeeId = employee?.id ?? "";
+  const text = [
+    taskText,
+    employee?.role,
+    employee?.department,
+  ].filter(Boolean).join(" ").toLowerCase();
+  const hasAny = (keywords) => keywords.some((keyword) => text.includes(keyword));
+
+  if (hasAny(["ax", "서포터즈", "보고서", "성과", "제출", "공식과제", "자율과제"]) || ["ax-pm", "report-writer", "activity-recorder"].includes(employeeId)) {
+    return "ax-report";
+  }
+  if (hasAny(["후기", "회고", "아카이브", "참여자 반응", "피드백", "개선점"]) || ["archive-curator", "feedback-analyst"].includes(employeeId)) {
+    return "review-summary";
+  }
+  if (hasAny(["앱", "기능", "화면", "개발", "ux", "사용자 흐름", "업데이트"]) || ["app-planner", "ux-builder"].includes(employeeId)) {
+    return "app-spec";
+  }
+  if (hasAny(["자동화", "반복 업무", "템플릿", "체크리스트", "업무흐름"]) || ["automation-bot", "template-bot"].includes(employeeId)) {
+    return "automation-template";
+  }
+  if (hasAny(["강의", "교안", "ppt", "슬라이드", "리허설", "실습", "교육"]) || [
+    "lecture-pd",
+    "opening-writer",
+    "case-developer",
+    "ppt-designer",
+    "prompt-engineer",
+    "rehearsal-coach",
+    "field-manager",
+  ].includes(employeeId)) {
+    return "lecture-plan";
+  }
+  return "markdown";
+}
+
+function buildScenarioOutputGuide(employee, taskText) {
+  const scenario = inferWorkScenario(employee, taskText);
+  const guides = {
+    "lecture-plan": [
+      "[업무 문서 유형: 강의 준비]",
+      "- 산출물 섹션에는 강의 목표, 강의 흐름, PPT 구성, 실습 활동, 리허설 체크포인트를 포함한다.",
+      "- 시간 배분이나 준비물 정보가 없으면 지어내지 말고 '확인 필요:'로 표시한다.",
+    ],
+    "review-summary": [
+      "[업무 문서 유형: 강의 후기 정리]",
+      "- 산출물 섹션에는 후기 요약, 참여자 반응, 강점, 개선점, 다음 강의 반영 액션을 포함한다.",
+      "- 실제 후기 문장이 없으면 예시 후기를 만들지 말고 필요한 원자료를 짧게 요청한다.",
+    ],
+    "ax-report": [
+      "[업무 문서 유형: AX 보고서]",
+      "- 산출물 섹션에는 활동 개요, 추진 내용, 성과, 증빙/산출물, 향후 계획을 포함한다.",
+      "- 공식 제출 문체로 차분하게 쓰고 근거가 없는 수치나 링크는 만들지 않는다.",
+    ],
+    "app-spec": [
+      "[업무 문서 유형: 앱 기능 정리]",
+      "- 산출물 섹션에는 사용자 문제, 핵심 화면, 기능 요구사항, 데이터, 우선순위, 개발 체크리스트를 포함한다.",
+      "- 개발자가 작업 단위로 볼 수 있게 화면/기능/검수 기준을 분리한다.",
+    ],
+    "automation-template": [
+      "[업무 문서 유형: 자동화 템플릿]",
+      "- 산출물 섹션에는 시작 조건, 입력값, 처리 순서, 출력물, 검수 기준, 예외 상황을 포함한다.",
+      "- 반복 적용할 수 있도록 복사 가능한 템플릿 문장으로 정리한다.",
+    ],
+    markdown: [
+      "[업무 문서 유형: 일반 문서]",
+      "- 산출물 섹션에는 바로 복사해 쓸 수 있는 구조와 검토 기준을 포함한다.",
+    ],
+  };
+
+  return (guides[scenario] ?? guides.markdown).join("\n");
+}
+
 function buildStandardReplySystem(employee) {
   return [
     "[직원별 업무 품질 기준]",
@@ -80,6 +152,7 @@ function buildEmployeePrompt(employee, taskText) {
   const system = [
     employee.prompt?.system ?? "",
     buildStandardReplySystem(employee),
+    buildScenarioOutputGuide(employee, taskText),
   ].filter(Boolean).join("\n\n");
 
   return {

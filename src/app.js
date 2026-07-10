@@ -201,6 +201,14 @@ const orchestrationTemplates = [
     ].join("\n"),
   },
 ];
+const artifactTypeLabels = {
+  "lecture-plan": "강의 준비",
+  "review-summary": "후기 정리",
+  "ax-report": "AX 보고서",
+  "app-spec": "앱 기능 정리",
+  "automation-template": "자동화 템플릿",
+  markdown: "일반 문서",
+};
 let state = loadState();
 let bubbleTick = 0;
 let orgViewMode = "card";
@@ -1510,6 +1518,7 @@ function rememberOrchestrationArtifact(item, remoteArtifact = {}) {
   const runId = state.orch.remoteRunId ?? "";
   const key = item.key ?? `${item.employeeId}-${item.order ?? 0}`;
   const id = remoteArtifact.id ?? (runId ? `${runId}:artifact:${key}` : `local-artifact:${key}`);
+  const artifactType = remoteArtifact.artifactType ?? inferArtifactType(item);
   const artifact = {
     id,
     runId,
@@ -1518,7 +1527,7 @@ function rememberOrchestrationArtifact(item, remoteArtifact = {}) {
     taskId: item.taskId ?? "",
     employeeId: item.employeeId,
     title: item.subtask || `${item.name || item.employeeId} 산출물`,
-    artifactType: remoteArtifact.artifactType ?? "markdown",
+    artifactType,
     contentText: buildOrchestrationItemMarkdown(item),
     fileUrl: "",
     metadata: {
@@ -1526,6 +1535,8 @@ function rememberOrchestrationArtifact(item, remoteArtifact = {}) {
       employeeName: item.name,
       role: getEmployee(item.employeeId)?.role ?? "",
       goal: state.orch.goal ?? "",
+      artifactType,
+      artifactTypeLabel: getArtifactTypeLabel(artifactType),
     },
     createdAt: remoteArtifact.createdAt ?? new Date().toISOString(),
     updatedAt: remoteArtifact.updatedAt ?? new Date().toISOString(),
@@ -1546,6 +1557,46 @@ function syncRemoteOrchestrationRun(patch) {
       app: "hayeon-ai-studio",
     },
   }).catch(handleRemoteOrchestrationSyncError);
+}
+
+function getArtifactTypeLabel(type) {
+  return artifactTypeLabels[type] ?? artifactTypeLabels.markdown;
+}
+
+function inferArtifactType(item = {}) {
+  const employeeId = item.employeeId ?? "";
+  const text = [
+    state.orch.goal,
+    item.subtask,
+    item.name,
+    getEmployee(employeeId)?.role,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const hasAny = (keywords) => keywords.some((keyword) => text.includes(keyword));
+  if (hasAny(["ax", "서포터즈", "보고서", "성과", "제출", "공식과제", "자율과제"]) || ["ax-pm", "report-writer", "activity-recorder"].includes(employeeId)) {
+    return "ax-report";
+  }
+  if (hasAny(["후기", "회고", "아카이브", "참여자 반응", "피드백", "개선점"]) || ["archive-curator", "feedback-analyst"].includes(employeeId)) {
+    return "review-summary";
+  }
+  if (hasAny(["앱", "기능", "화면", "개발", "ux", "사용자 흐름", "업데이트"]) || ["app-planner", "ux-builder"].includes(employeeId)) {
+    return "app-spec";
+  }
+  if (hasAny(["자동화", "반복 업무", "템플릿", "체크리스트", "업무흐름"]) || ["automation-bot", "template-bot"].includes(employeeId)) {
+    return "automation-template";
+  }
+  if (hasAny(["강의", "교안", "ppt", "슬라이드", "리허설", "실습", "교육"]) || [
+    "lecture-pd",
+    "opening-writer",
+    "case-developer",
+    "ppt-designer",
+    "prompt-engineer",
+    "rehearsal-coach",
+    "field-manager",
+  ].includes(employeeId)) {
+    return "lecture-plan";
+  }
+  return "markdown";
 }
 
 function serializeRemoteOrchestrationItem(item) {
@@ -1576,6 +1627,7 @@ function serializeRemoteOrchestrationArtifact(item) {
   const employee = getEmployee(item.employeeId);
   const runId = state.orch.remoteRunId ?? "";
   const key = item.key ?? `${item.employeeId}-${item.order ?? 0}`;
+  const artifactType = inferArtifactType(item);
   return {
     id: key,
     itemKey: key,
@@ -1583,7 +1635,7 @@ function serializeRemoteOrchestrationArtifact(item) {
     taskId: item.taskId ?? "",
     employeeId: item.employeeId,
     title: item.subtask || `${item.name || employee?.name || "직원"} 산출물`,
-    artifactType: "markdown",
+    artifactType,
     contentText: buildOrchestrationItemMarkdown(item),
     metadata: {
       source: "orchestration",
@@ -1592,6 +1644,8 @@ function serializeRemoteOrchestrationArtifact(item) {
       phase: item.phase,
       employeeName: item.name || employee?.name || item.employeeId,
       role: employee?.role ?? "",
+      artifactType,
+      artifactTypeLabel: getArtifactTypeLabel(artifactType),
       localTaskId: item.taskId ?? "",
       createdBy: "hayeon-ai-studio",
     },
@@ -2207,9 +2261,11 @@ function buildStoredOrchestrationResult() {
 function buildOrchestrationItemMarkdown(item) {
   const employee = getEmployee(item.employeeId);
   const statusLabel = getOrchestrationStatusLabel(item.status ?? "queued");
+  const artifactType = inferArtifactType(item);
   const body = item.error || item.text || "아직 저장된 결과가 없습니다.";
   const metaLines = [
     `- 전체 목표: ${state.orch.goal || "기록된 목표 없음"}`,
+    `- 문서 유형: ${getArtifactTypeLabel(artifactType)} (${artifactType})`,
     `- 담당: ${item.name || employee?.name || "직원"}`,
     `- 역할: ${employee?.role || "역할 정보 없음"}`,
     `- 상태: ${statusLabel}`,
@@ -2447,7 +2503,7 @@ function renderArtifactCards(artifacts = []) {
     const updatedAt = formatRemoteDate(artifact.updatedAt || artifact.createdAt);
     const meta = [
       employee?.name || artifact.metadata?.employeeName || "AI 직원",
-      artifact.artifactType || "markdown",
+      getArtifactTypeLabel(artifact.artifactType || artifact.metadata?.artifactType || "markdown"),
       updatedAt,
     ].filter(Boolean).join(" · ");
     const preview = getArtifactContent(artifact).replace(/^# .+\n+/, "").trim().slice(0, 180);
@@ -2524,7 +2580,7 @@ function buildArtifactFilterOptions(artifacts = [], type) {
     }
 
     const value = artifact.artifactType || "markdown";
-    map.set(value, value);
+    map.set(value, getArtifactTypeLabel(value));
   });
 
   return [...map.entries()]
