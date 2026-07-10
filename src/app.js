@@ -1434,6 +1434,11 @@ function syncRemoteTask(task) {
   void automationStore.upsertTask(serializeRemoteTask(task)).catch(handleRemoteTaskSyncError);
 }
 
+function syncRemoteTaskDeletion(task) {
+  if (!automationStore?.deleteTask || !task?.id || !isAdminLoggedIn()) return;
+  void automationStore.deleteTask(task.id).catch(handleRemoteTaskSyncError);
+}
+
 function loadRemoteTasksIfNeeded({ force = false } = {}) {
   if (!automationStore?.listTasks || !isAdminLoggedIn()) return;
   if (remoteTasksLoading) return;
@@ -4465,6 +4470,7 @@ function updateTaskStatus(taskId, status) {
 
 function deleteTask(taskId) {
   const task = getTask(taskId);
+  syncRemoteTaskDeletion(task);
   state.tasks = state.tasks.filter((item) => item.id !== taskId);
   pendingTimers.delete(taskId);
 

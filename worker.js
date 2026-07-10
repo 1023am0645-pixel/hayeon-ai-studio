@@ -79,6 +79,11 @@ async function handleAutomationRoute(request, env, url) {
       }
     }
 
+    const taskMatch = url.pathname.match(/^\/api\/automation\/tasks\/([^/]+)$/);
+    if (taskMatch && request.method === "DELETE") {
+      return deleteAutomationTask(env.AGENT_DB, taskMatch[1], context.requestId);
+    }
+
     const chatMatch = url.pathname.match(/^\/api\/automation\/chat\/([^/]+)$/);
     if (chatMatch) {
       if (request.method === "GET") {
@@ -584,6 +589,31 @@ async function listAutomationTasks(db, url, requestId) {
     text: "",
     data: {
       tasks: rows.results ?? [],
+    },
+    requestId,
+  });
+}
+
+async function deleteAutomationTask(db, taskId, requestId) {
+  let decodedId = "";
+  try {
+    decodedId = decodeURIComponent(String(taskId ?? ""));
+  } catch {
+    return agentError("bad_task_id", 400, requestId);
+  }
+  const id = normalizeId(decodedId, 180);
+  if (!id) return agentError("bad_task_id", 400, requestId);
+
+  const result = await db.prepare("DELETE FROM tasks WHERE id = ?").bind(id).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      task: {
+        id,
+        deleted: Boolean(result.meta?.changes),
+      },
     },
     requestId,
   });

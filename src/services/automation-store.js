@@ -101,6 +101,13 @@ function listTasks({ limit = 100, status = "all", employeeId = "", sourceRunId =
   return requestAutomation(`/api/automation/tasks?${params.toString()}`);
 }
 
+function deleteTask(taskId) {
+  if (!taskId) return Promise.resolve(null);
+  return requestAutomation(`/api/automation/tasks/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+  });
+}
+
 function listChatMessages(employeeId, { limit = 40 } = {}) {
   if (!employeeId) return Promise.resolve({ messages: [] });
   const safeLimit = Math.min(Math.max(Number(limit) || 40, 1), 100);
@@ -131,6 +138,7 @@ window.HayeonAutomationStore = {
   upsertArtifact,
   upsertTask,
   listTasks,
+  deleteTask,
   listChatMessages,
   createChatMessage,
   isStorageMissing,
