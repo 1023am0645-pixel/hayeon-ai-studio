@@ -74,6 +74,18 @@ async function handleAutomationRoute(request, env, url) {
       return upsertAutomationTask(env.AGENT_DB, body, context.requestId);
     }
 
+    const chatMatch = url.pathname.match(/^\/api\/automation\/chat\/([^/]+)$/);
+    if (chatMatch) {
+      if (request.method === "GET") {
+        return listChatMessages(env.AGENT_DB, chatMatch[1], url, context.requestId);
+      }
+      if (request.method === "POST") {
+        const body = await parseJsonBody(request, context.requestId);
+        if (body instanceof Response) return body;
+        return createChatMessage(env.AGENT_DB, chatMatch[1], body, context.requestId);
+      }
+    }
+
     const runItemMatch = url.pathname.match(/^\/api\/automation\/runs\/([^/]+)\/items$/);
     if (runItemMatch && request.method === "POST") {
       const body = await parseJsonBody(request, context.requestId);
@@ -530,6 +542,82 @@ async function upsertAutomationTask(db, body, requestId) {
   });
 }
 
+async function listChatMessages(db, employeeId, url, requestId) {
+  const normalizedEmployeeId = normalizeId(employeeId, 120);
+  if (!normalizedEmployeeId) return agentError("bad_employee_id", 400, requestId);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 40, 1), 100);
+
+  const rows = await db.prepare(`
+    SELECT * FROM chat_messages
+    WHERE employee_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).bind(normalizedEmployeeId, limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      messages: (rows.results ?? []).reverse(),
+    },
+    requestId,
+  });
+}
+
+async function createChatMessage(db, employeeId, body, requestId) {
+  const normalizedEmployeeId = normalizeId(employeeId, 120);
+  if (!normalizedEmployeeId) return agentError("bad_employee_id", 400, requestId);
+
+  const role = normalizeChatRole(body.role);
+  const content = typeof body.content === "string"
+    ? body.content.trim().slice(0, 20000)
+    : String(body.text ?? "").trim().slice(0, 20000);
+  if (!content) return agentError("bad_chat_message", 400, requestId);
+
+  const id = normalizeId(body.id, 180) || crypto.randomUUID();
+  const source = normalizeId(body.source, 80) || "manual";
+  const metadata = stringifyMetadata(body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+    ? body.metadata
+    : {});
+  const createdAt = nullableString(body.createdAt ?? body.created_at, new Date().toISOString(), 120);
+
+  await db.prepare(`
+    INSERT INTO chat_messages (
+      id, employee_id, role, content, source, metadata_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      role = excluded.role,
+      content = excluded.content,
+      source = excluded.source,
+      metadata_json = excluded.metadata_json
+  `).bind(
+    id,
+    normalizedEmployeeId,
+    role,
+    content,
+    source,
+    metadata,
+    createdAt,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      message: {
+        id,
+        employeeId: normalizedEmployeeId,
+        role,
+        content,
+        source,
+        createdAt,
+      },
+    },
+    requestId,
+  });
+}
+
 async function getAutomationRun(db, runId, requestId) {
   const id = String(runId ?? "").trim().slice(0, 120);
   if (!id) return agentError("bad_run_id", 400, requestId);
@@ -593,6 +681,11 @@ function normalizeBoardTaskStatus(value, fallback = "todo") {
   const allowed = new Set(["todo", "doing", "review", "done", "error", "blocked"]);
   const status = String(value ?? "").trim();
   return allowed.has(status) ? status : fallback;
+}
+
+function normalizeChatRole(value) {
+  const role = String(value ?? "").trim();
+  return role === "user" ? "user" : "ai";
 }
 
 function safeJsonParse(text) {

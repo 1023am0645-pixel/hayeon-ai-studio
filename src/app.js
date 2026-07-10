@@ -17,6 +17,8 @@ const {
   summarizeOrchestration,
 } = window.HayeonAiAdapter;
 const automationStore = window.HayeonAutomationStore ?? null;
+const remoteChatLoadedEmployeeIds = new Set();
+const remoteChatLoadingEmployeeIds = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -238,6 +240,7 @@ function getInitialState() {
   return {
     employees: clone(seedEmployees),
     tasks: clone(seedTasks),
+    chat: {},
     orch: getInitialOrchState(),
     currentView: "building",
     selectedFloorId: null,
@@ -267,6 +270,7 @@ function loadState() {
       theme: normalizeTheme(parsed.theme ?? getStoredTheme()),
       employees: hydrateEmployees(parsed.employees),
       tasks: hydrateTasks(parsed.tasks),
+      chat: hydrateChat(parsed.chat),
       orch: hydrateOrch(parsed.orch),
     };
   } catch {
@@ -328,6 +332,14 @@ function hydrateTasks(savedTasks = []) {
       .filter((task) => !savedIds.has(task.id))
       .map(hydrateTask),
   ];
+}
+
+function hydrateChat(savedChat = {}) {
+  if (!savedChat || typeof savedChat !== "object" || Array.isArray(savedChat)) return {};
+  return Object.fromEntries(Object.entries(savedChat).map(([employeeId, messages]) => [
+    employeeId,
+    Array.isArray(messages) ? messages.filter((message) => message && typeof message === "object") : [],
+  ]));
 }
 
 function hydrateTask(task = {}) {
@@ -402,6 +414,7 @@ function openAdminModal() {
   const loggedIn = isAdminLoggedIn();
   if (loggedIn) {
     localStorage.removeItem(adminTokenKey);
+    resetRemoteChatCache();
     updateAdminButton();
     showToast("관리자 로그아웃 됐습니다.");
     return;
@@ -510,20 +523,34 @@ function bindEvents() {
       const employee = getSelectedEmployee();
       state.chat = state.chat || {};
       const log = (state.chat[employee.id] = state.chat[employee.id] || []);
-      log.push({ role: "user", text: message });
-      log.push({ role: "ai", text: "", pending: true });
+      const userMessage = createChatEntry("user", message, { source: "manual" });
+      const pendingMessage = createChatEntry("ai", "", { pending: true, source: "agent" });
+      log.push(userMessage);
+      log.push(pendingMessage);
+      saveState();
+      syncRemoteChatMessage(employee.id, userMessage);
       renderEmployeeDetail();
       scrollChatBottom();
       try {
         const text = await window.HayeonAiAdapter.requestEmployeeReply(employee, message);
-        log[log.length - 1] = { role: "ai", text };
+        const aiMessage = createChatEntry("ai", text, { id: pendingMessage.id, source: "agent" });
+        log[log.length - 1] = aiMessage;
+        syncRemoteChatMessage(employee.id, aiMessage);
       } catch (err) {
         console.error("agent error:", err);
         if (err?.message === "unauthorized") {
-          log[log.length - 1] = { role: "ai", text: "🔒 관리자만 이용할 수 있는 기능입니다. 상단 자물쇠 버튼으로 로그인하세요." };
+          log[log.length - 1] = createChatEntry("ai", "🔒 관리자만 이용할 수 있는 기능입니다. 상단 자물쇠 버튼으로 로그인하세요.", {
+            id: pendingMessage.id,
+            source: "system",
+          });
         } else {
           const reply = createSimulatedReply(employee, message);
-          log[log.length - 1] = { role: "ai", text: `${reply.text} (오프라인)` };
+          const fallbackMessage = createChatEntry("ai", `${reply.text} (오프라인)`, {
+            id: pendingMessage.id,
+            source: "offline",
+          });
+          log[log.length - 1] = fallbackMessage;
+          syncRemoteChatMessage(employee.id, fallbackMessage);
         }
       }
       saveState();
@@ -660,8 +687,10 @@ function bindEvents() {
     const password = refs.adminPasswordInput.value.trim();
     if (!password) return;
     localStorage.setItem(adminTokenKey, password);
+    resetRemoteChatCache();
     closeAdminModal();
     updateAdminButton();
+    if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
     showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
   });
 
@@ -2134,6 +2163,80 @@ function scrollChatBottom() {
   });
 }
 
+function createChatEntry(role, text, options = {}) {
+  return {
+    id: options.id || `chat-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    role: role === "user" ? "user" : "ai",
+    text,
+    pending: Boolean(options.pending),
+    source: options.source ?? "manual",
+    createdAt: options.createdAt ?? new Date().toISOString(),
+  };
+}
+
+function syncRemoteChatMessage(employeeId, message) {
+  if (!automationStore?.createChatMessage || !employeeId || !message || message.pending || !message.text || !isAdminLoggedIn()) return;
+  void automationStore.createChatMessage(employeeId, {
+    id: message.id,
+    role: message.role,
+    content: message.text,
+    source: message.source ?? "manual",
+    createdAt: message.createdAt ?? new Date().toISOString(),
+    metadata: {
+      createdBy: "hayeon-ai-studio",
+    },
+  }).catch(handleRemoteChatSyncError);
+}
+
+function loadRemoteChatIfNeeded(employeeId) {
+  if (!automationStore?.listChatMessages || !employeeId || !isAdminLoggedIn()) return;
+  if (remoteChatLoadedEmployeeIds.has(employeeId) || remoteChatLoadingEmployeeIds.has(employeeId)) return;
+
+  remoteChatLoadingEmployeeIds.add(employeeId);
+  void automationStore.listChatMessages(employeeId, { limit: 60 })
+    .then((data) => {
+      mergeRemoteChatMessages(employeeId, data?.messages ?? []);
+      remoteChatLoadedEmployeeIds.add(employeeId);
+      if (state.selectedEmployeeId === employeeId && state.detailMode === "chat") {
+        renderEmployeeDetail();
+        scrollChatBottom();
+      }
+    })
+    .catch(handleRemoteChatSyncError)
+    .finally(() => remoteChatLoadingEmployeeIds.delete(employeeId));
+}
+
+function mergeRemoteChatMessages(employeeId, messages) {
+  if (!Array.isArray(messages) || !messages.length) return;
+  state.chat = state.chat || {};
+  const local = state.chat[employeeId] = Array.isArray(state.chat[employeeId]) ? state.chat[employeeId] : [];
+  const byId = new Map(local.filter((message) => message.id).map((message) => [message.id, message]));
+  messages.forEach((message) => {
+    const id = message.id ?? `remote-${message.created_at ?? Date.now()}`;
+    if (byId.has(id)) return;
+    local.push({
+      id,
+      role: message.role === "user" ? "user" : "ai",
+      text: message.content ?? "",
+      pending: false,
+      source: message.source ?? "remote",
+      createdAt: message.created_at ?? message.createdAt ?? "",
+    });
+  });
+  local.sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0));
+  saveState();
+}
+
+function handleRemoteChatSyncError(error) {
+  if (automationStore?.isStorageMissing?.(error)) return;
+  console.warn("remote chat sync failed:", error);
+}
+
+function resetRemoteChatCache() {
+  remoteChatLoadedEmployeeIds.clear();
+  remoteChatLoadingEmployeeIds.clear();
+}
+
 function scrollAppToTop() {
   window.requestAnimationFrame(() => {
     window.scrollTo(0, 0);
@@ -3195,6 +3298,7 @@ function renderDetailMode(employee) {
   }
 
   if (state.detailMode === "chat") {
+    loadRemoteChatIfNeeded(employee.id);
     const log = (state.chat && state.chat[employee.id]) || [];
     const msgs = log.map((m) => {
       if (m.pending) return `<div class="chat-msg ai is-pending"><span class="chat-typing"><i></i><i></i><i></i></span></div>`;

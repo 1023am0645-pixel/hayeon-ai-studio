@@ -92,6 +92,20 @@ function upsertTask(task) {
   });
 }
 
+function listChatMessages(employeeId, { limit = 40 } = {}) {
+  if (!employeeId) return Promise.resolve({ messages: [] });
+  const safeLimit = Math.min(Math.max(Number(limit) || 40, 1), 100);
+  return requestAutomation(`/api/automation/chat/${encodeURIComponent(employeeId)}?limit=${safeLimit}`);
+}
+
+function createChatMessage(employeeId, message) {
+  if (!employeeId || !message) return Promise.resolve(null);
+  return requestAutomation(`/api/automation/chat/${encodeURIComponent(employeeId)}`, {
+    method: "POST",
+    body: message,
+  });
+}
+
 function isStorageMissing(error) {
   return error?.code === "agent_db_missing" || error?.message === "agent_db_missing";
 }
@@ -107,6 +121,8 @@ window.HayeonAutomationStore = {
   upsertRunItem,
   upsertArtifact,
   upsertTask,
+  listChatMessages,
+  createChatMessage,
   isStorageMissing,
 };
 })();
