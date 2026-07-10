@@ -1,4 +1,7 @@
 (() => {
+const adminTokenKey = "hayeon-admin-token";
+try { localStorage.removeItem(adminTokenKey); } catch {}
+
 const aiProviderSlots = {
   openai: {
     enabled: false,
@@ -107,8 +110,16 @@ function createSimulatedReply(employee, message) {
   };
 }
 
+function getAdminToken() {
+  try {
+    return sessionStorage.getItem(adminTokenKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function getAdminHeaders() {
-  const token = localStorage.getItem("hayeon-admin-token") ?? "";
+  const token = getAdminToken();
   return token ? { "content-type": "application/json", "X-Admin-Token": token } : { "content-type": "application/json" };
 }
 

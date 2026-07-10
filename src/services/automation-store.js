@@ -1,5 +1,6 @@
 (() => {
 const adminTokenKey = "hayeon-admin-token";
+try { localStorage.removeItem(adminTokenKey); } catch {}
 
 class AutomationStoreError extends Error {
   constructor(message, details = {}) {
@@ -12,8 +13,16 @@ class AutomationStoreError extends Error {
   }
 }
 
+function getAdminToken() {
+  try {
+    return sessionStorage.getItem(adminTokenKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function getAdminHeaders(hasBody = false) {
-  const token = localStorage.getItem(adminTokenKey) ?? "";
+  const token = getAdminToken();
   const headers = hasBody ? { "content-type": "application/json" } : {};
   if (token) headers["X-Admin-Token"] = token;
   return headers;

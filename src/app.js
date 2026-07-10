@@ -142,6 +142,7 @@ function getLucideIcon(name, className = "") {
 const uiThemeKey = "hayeon-ui-theme";
 const uiThemes = ["aurora", "light", "dark"];
 const adminTokenKey = "hayeon-admin-token";
+try { localStorage.removeItem(adminTokenKey); } catch {}
 const boardFilters = ["all", "todo", "doing", "review", "done"];
 const orchestrationTemplates = [
   {
@@ -401,8 +402,34 @@ function cycleTheme() {
   showToast(`테마: ${nextTheme}`);
 }
 
+function getAdminToken() {
+  try {
+    return sessionStorage.getItem(adminTokenKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function setAdminToken(token) {
+  try {
+    sessionStorage.setItem(adminTokenKey, token);
+  } catch {}
+  try {
+    localStorage.removeItem(adminTokenKey);
+  } catch {}
+}
+
+function clearAdminToken() {
+  try {
+    sessionStorage.removeItem(adminTokenKey);
+  } catch {}
+  try {
+    localStorage.removeItem(adminTokenKey);
+  } catch {}
+}
+
 function isAdminLoggedIn() {
-  return Boolean(localStorage.getItem(adminTokenKey));
+  return Boolean(getAdminToken());
 }
 
 function updateAdminButton() {
@@ -419,7 +446,7 @@ function updateAdminButton() {
 function openAdminModal() {
   const loggedIn = isAdminLoggedIn();
   if (loggedIn) {
-    localStorage.removeItem(adminTokenKey);
+    clearAdminToken();
     resetRemoteChatCache();
     resetRemoteTaskCache();
     resetRemoteArtifactLibraryCache();
@@ -694,7 +721,7 @@ function bindEvents() {
     event.preventDefault();
     const password = refs.adminPasswordInput.value.trim();
     if (!password) return;
-    localStorage.setItem(adminTokenKey, password);
+    setAdminToken(password);
     resetRemoteChatCache();
     resetRemoteTaskCache();
     resetRemoteArtifactLibraryCache();
