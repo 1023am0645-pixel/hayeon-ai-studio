@@ -6730,11 +6730,56 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-size: 13px;
 }
 
+.orch-result-answer-wrap {
+  position: relative;
+  display: grid;
+  gap: 7px;
+}
+
 .orch-result-answer {
   max-height: 180px;
   padding-right: 4px;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+.orch-result-answer-wrap.is-collapsible:not(.is-expanded) .orch-result-answer {
+  max-height: 118px;
+  overflow: hidden;
+}
+
+.orch-result-answer-wrap.is-collapsible:not(.is-expanded)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 34px;
+  left: 0;
+  height: 42px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 250, 239, 0), rgba(255, 250, 239, 0.96));
+}
+
+.orch-result-card.has-error .orch-result-answer-wrap.is-collapsible:not(.is-expanded)::after {
+  background: linear-gradient(180deg, rgba(255, 244, 240, 0), rgba(255, 244, 240, 0.96));
+}
+
+.orch-result-answer-wrap button {
+  justify-self: start;
+  padding: 5px 9px;
+  color: #6a451e;
+  background: rgba(255, 244, 218, 0.86);
+  border: 1px solid rgba(171, 123, 57, 0.20);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.orch-result-answer-wrap button:hover,
+.orch-result-answer-wrap button:focus-visible {
+  color: #2f1e0d;
+  background: rgba(255, 226, 164, 0.94);
+  outline: none;
 }
 
 .orch-artifact-library {

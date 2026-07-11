@@ -886,6 +886,7 @@ function bindEvents() {
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationArtifactAction);
+  refs.orchestrationResults.addEventListener("click", handleOrchestrationAnswerToggle);
   refs.orchestrationResults.addEventListener("input", handleArtifactLibraryFilterInput);
   refs.orchestrationResults.addEventListener("change", handleArtifactLibraryFilterInput);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationDetailClick);
@@ -1903,14 +1904,14 @@ function handleOrchestrationReviewAction(event) {
 }
 
 function handleOrchestrationDetailClick(event) {
-  if (event.target.closest("[data-orch-action]")) return;
+  if (event.target.closest("[data-orch-action], [data-orch-answer-toggle]")) return;
   const itemNode = event.target.closest("[data-orch-key]");
   if (!itemNode) return;
   openOrchestrationDetail(itemNode.dataset.orchKey);
 }
 
 function handleOrchestrationDetailKeydown(event) {
-  if (event.target.closest("[data-orch-action]")) return;
+  if (event.target.closest("[data-orch-action], [data-orch-answer-toggle]")) return;
   if (event.key !== "Enter" && event.key !== " ") return;
   const itemNode = event.target.closest("[data-orch-key]");
   if (!itemNode) return;
@@ -1996,6 +1997,19 @@ async function handleOrchestrationArtifactAction(event) {
     downloadTextFile(makeOrchestrationFilename(item.subtask || item.name || "agent-result"), buildOrchestrationItemMarkdown(item));
     showToast(`${item.name || "직원"} 산출물 문서를 다운로드했습니다.`);
   }
+}
+
+function handleOrchestrationAnswerToggle(event) {
+  const button = event.target.closest("[data-orch-answer-toggle]");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const wrap = button.closest(".orch-result-answer-wrap");
+  if (!wrap) return;
+  const isExpanded = wrap.classList.toggle("is-expanded");
+  button.setAttribute("aria-expanded", String(isExpanded));
+  button.textContent = isExpanded ? "접기" : "더보기";
 }
 
 function findOrchestrationItem(key) {
@@ -2545,6 +2559,8 @@ function renderOrchestrationResults(result) {
   const rows = result.results.map((item) => {
     const employee = getEmployee(item.employeeId);
     const isError = Boolean(item.error);
+    const answerText = isError ? item.error : item.text;
+    const isLongAnswer = String(answerText ?? "").length > 420;
     return `
       <article
         class="orch-result-card ${isError ? "has-error" : ""}"
@@ -2562,7 +2578,10 @@ function renderOrchestrationResults(result) {
           </div>
         </div>
         <p class="orch-result-task">${escapeHtml(item.subtask)}</p>
-        <p class="orch-result-answer">${escapeHtml(isError ? item.error : item.text)}</p>
+        <div class="orch-result-answer-wrap ${isLongAnswer ? "is-collapsible" : ""}">
+          <p class="orch-result-answer">${escapeHtml(answerText)}</p>
+          ${isLongAnswer ? '<button type="button" data-orch-answer-toggle aria-expanded="false">더보기</button>' : ""}
+        </div>
       </article>
     `;
   }).join("");
