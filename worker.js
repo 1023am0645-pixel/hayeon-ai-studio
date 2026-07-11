@@ -66,6 +66,24 @@ async function handleAutomationRoute(request, env, url) {
       return listAutomationArtifacts(env.AGENT_DB, url, context.requestId);
     }
 
+    if (url.pathname === "/api/automation/tool-actions") {
+      if (request.method === "GET") {
+        return listToolActions(env.AGENT_DB, url, context.requestId);
+      }
+      if (request.method === "POST") {
+        const body = await parseJsonBody(request, context.requestId);
+        if (body instanceof Response) return body;
+        return upsertToolAction(env.AGENT_DB, body, context.requestId);
+      }
+    }
+
+    const toolActionMatch = url.pathname.match(/^\/api\/automation\/tool-actions\/([^/]+)$/);
+    if (toolActionMatch && request.method === "PATCH") {
+      const body = await parseJsonBody(request, context.requestId);
+      if (body instanceof Response) return body;
+      return updateToolAction(env.AGENT_DB, toolActionMatch[1], body, context.requestId);
+    }
+
     if (url.pathname === "/api/automation/data" && request.method === "DELETE") {
       return clearAutomationData(env.AGENT_DB, context.requestId);
     }
@@ -342,8 +360,149 @@ async function listAutomationArtifacts(db, url, requestId) {
   });
 }
 
+async function listToolActions(db, url, requestId) {
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 40, 1), 100);
+  const statusParam = normalizeId(url.searchParams.get("status"), 40);
+  const sourceRunId = normalizeId(url.searchParams.get("runId") ?? url.searchParams.get("sourceRunId") ?? url.searchParams.get("source_run_id"), 120);
+  const clauses = [];
+  const binds = [];
+
+  if (statusParam && statusParam !== "all") {
+    const status = normalizeToolActionStatus(statusParam, "");
+    if (status) {
+      clauses.push("status = ?");
+      binds.push(status);
+    }
+  }
+  if (sourceRunId) {
+    clauses.push("source_run_id = ?");
+    binds.push(sourceRunId);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await db.prepare(`
+    SELECT * FROM tool_actions
+    ${where}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: { toolActions: rows.results ?? [] },
+    requestId,
+  });
+}
+
+async function upsertToolAction(db, body, requestId) {
+  const id = normalizeId(body.id ?? body.actionId ?? body.action_id, 180) || `tool-${crypto.randomUUID()}`;
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 500) : "";
+  if (!title) return agentError("bad_tool_action", 400, requestId);
+
+  const actionType = normalizeToolActionType(body.actionType ?? body.action_type);
+  const status = normalizeToolActionStatus(body.status, "pending");
+  const sourceRunId = normalizeId(body.sourceRunId ?? body.source_run_id ?? body.runId, 120) || null;
+  const sourceArtifactId = normalizeId(body.sourceArtifactId ?? body.source_artifact_id ?? body.artifactId, 180) || null;
+  const sourceTaskId = normalizeId(body.sourceTaskId ?? body.source_task_id ?? body.taskId, 180) || null;
+  const description = nullableString(body.description, "", 3000);
+  const payload = stringifyMetadata(body.payload && typeof body.payload === "object" && !Array.isArray(body.payload) ? body.payload : {});
+  const approvalNote = nullableString(body.approvalNote ?? body.approval_note, "", 12000);
+  const metadata = stringifyMetadata(body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {});
+  const now = new Date().toISOString();
+  const approvedAt = status === "approved" ? now : nullableString(body.approvedAt ?? body.approved_at, null, 120);
+  const executedAt = status === "executed" ? now : nullableString(body.executedAt ?? body.executed_at, null, 120);
+
+  await db.prepare(`
+    INSERT INTO tool_actions (
+      id, source_run_id, source_artifact_id, source_task_id, action_type, title,
+      description, status, payload_json, approval_note, metadata_json, created_at,
+      updated_at, approved_at, executed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      source_run_id = excluded.source_run_id,
+      source_artifact_id = excluded.source_artifact_id,
+      source_task_id = excluded.source_task_id,
+      action_type = excluded.action_type,
+      title = excluded.title,
+      description = excluded.description,
+      status = excluded.status,
+      payload_json = excluded.payload_json,
+      approval_note = excluded.approval_note,
+      metadata_json = excluded.metadata_json,
+      updated_at = excluded.updated_at,
+      approved_at = COALESCE(excluded.approved_at, tool_actions.approved_at),
+      executed_at = COALESCE(excluded.executed_at, tool_actions.executed_at)
+  `).bind(
+    id,
+    sourceRunId,
+    sourceArtifactId,
+    sourceTaskId,
+    actionType,
+    title,
+    description,
+    status,
+    payload,
+    approvalNote,
+    metadata,
+    now,
+    now,
+    approvedAt,
+    executedAt,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      toolAction: { id, sourceRunId, sourceArtifactId, sourceTaskId, actionType, title, status, updatedAt: now },
+    },
+    requestId,
+  });
+}
+
+async function updateToolAction(db, actionId, body, requestId) {
+  let decodedId = "";
+  try {
+    decodedId = decodeURIComponent(String(actionId ?? ""));
+  } catch {
+    return agentError("bad_tool_action_id", 400, requestId);
+  }
+  const id = normalizeId(decodedId, 180);
+  if (!id) return agentError("bad_tool_action_id", 400, requestId);
+
+  const current = await db.prepare("SELECT * FROM tool_actions WHERE id = ?").bind(id).first();
+  if (!current) return agentError("tool_action_not_found", 404, requestId);
+
+  const status = normalizeToolActionStatus(body.status, current.status);
+  const approvalNote = nullableString(body.approvalNote ?? body.approval_note, current.approval_note ?? "", 12000);
+  const metadata = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+    ? stringifyMetadata({ ...safeJsonParse(current.metadata_json), ...body.metadata })
+    : current.metadata_json;
+  const now = new Date().toISOString();
+  const approvedAt = status === "approved" && !current.approved_at ? now : current.approved_at;
+  const executedAt = status === "executed" && !current.executed_at ? now : current.executed_at;
+
+  await db.prepare(`
+    UPDATE tool_actions
+    SET status = ?, approval_note = ?, metadata_json = ?, updated_at = ?, approved_at = ?, executed_at = ?
+    WHERE id = ?
+  `).bind(status, approvalNote, metadata, now, approvedAt, executedAt, id).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      toolAction: { id, status, approvalNote, updatedAt: now, approvedAt, executedAt },
+    },
+    requestId,
+  });
+}
+
 async function clearAutomationData(db, requestId) {
   const tables = [
+    "tool_actions",
     "artifacts",
     "chat_messages",
     "tasks",
@@ -353,8 +512,16 @@ async function clearAutomationData(db, requestId) {
   const deleted = {};
 
   for (const table of tables) {
-    const result = await db.prepare(`DELETE FROM ${table}`).run();
-    deleted[table] = Number(result.meta?.changes ?? 0);
+    try {
+      const result = await db.prepare(`DELETE FROM ${table}`).run();
+      deleted[table] = Number(result.meta?.changes ?? 0);
+    } catch (error) {
+      if (String(error).includes("no such table")) {
+        deleted[table] = "missing";
+        continue;
+      }
+      throw error;
+    }
   }
 
   return json({
@@ -828,6 +995,25 @@ function normalizeBoardTaskStatus(value, fallback = "todo") {
   const allowed = new Set(["todo", "doing", "review", "done", "error", "blocked"]);
   const status = String(value ?? "").trim();
   return allowed.has(status) ? status : fallback;
+}
+
+function normalizeToolActionStatus(value, fallback = "pending") {
+  const allowed = new Set(["pending", "approved", "rejected", "executed", "cancelled"]);
+  const status = String(value ?? "").trim();
+  return allowed.has(status) ? status : fallback;
+}
+
+function normalizeToolActionType(value) {
+  const allowed = new Set([
+    "calendar_event",
+    "document_draft",
+    "email_draft",
+    "checklist",
+    "file_folder",
+    "automation_recipe",
+  ]);
+  const type = String(value ?? "").trim();
+  return allowed.has(type) ? type : "document_draft";
 }
 
 function normalizeChatRole(value) {

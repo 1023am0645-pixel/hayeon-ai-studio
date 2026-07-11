@@ -107,3 +107,30 @@ ON artifacts (run_id, created_at ASC);
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_task_created
 ON artifacts (task_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS tool_actions (
+  id TEXT PRIMARY KEY,
+  source_run_id TEXT,
+  source_artifact_id TEXT,
+  source_task_id TEXT,
+  action_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  approval_note TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  approved_at TEXT,
+  executed_at TEXT,
+  FOREIGN KEY (source_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_artifact_id) REFERENCES artifacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_task_id) REFERENCES tasks(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tool_actions_status_updated
+ON tool_actions (status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tool_actions_run_created
+ON tool_actions (source_run_id, created_at ASC);
