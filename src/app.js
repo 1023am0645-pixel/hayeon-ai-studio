@@ -1398,6 +1398,7 @@ function appendToolActionAuditLog(action = {}, event = "updated") {
     rejected: "보류됨",
     dryRun: "리허설 완료",
     executed: "완료 표시",
+    task: "할 일판 등록",
   };
   appendOrchestrationLog({
     phase: `tool-${event}`,
@@ -2139,6 +2140,11 @@ async function handleToolActionControl(event) {
     return;
   }
 
+  if (command === "task") {
+    createBoardTaskFromToolAction(action);
+    return;
+  }
+
   if (command === "copy") {
     try {
       await copyTextToClipboard(buildToolActionMarkdown(action));
@@ -2169,6 +2175,88 @@ function runToolActionDryRun(action = {}) {
   renderOrchestrationResults(buildStoredOrchestrationResult());
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
   showToast("외부 전송 없이 자동화 리허설 결과를 생성했습니다.");
+}
+
+function createBoardTaskFromToolAction(action = {}) {
+  const status = normalizeToolActionStatus(action.status);
+  if (status === "pending") {
+    showToast("승인 후 할 일판에 등록할 수 있습니다.");
+    return null;
+  }
+  if (status === "rejected" || status === "cancelled") {
+    showToast("보류된 자동화 후보는 할 일판에 등록하지 않았습니다.");
+    return null;
+  }
+
+  const existingTaskId = action.metadata?.boardTaskId ?? "";
+  const existingTask = existingTaskId ? getTask(existingTaskId) : null;
+  if (existingTask) {
+    openTaskDrawer();
+    openTaskDetailModal(existingTask.id);
+    showToast("이미 등록된 할 일판 업무를 열었습니다.");
+    return existingTask;
+  }
+
+  const payload = action.payload ?? {};
+  const assigneeId = getEmployee(payload.employeeId)?.id
+    || getEmployeeByName(payload.employeeName)?.id
+    || getSummaryEmployee()?.id
+    || state.employees[0]?.id
+    || "";
+  if (!assigneeId) {
+    showToast("담당 직원을 찾지 못해 업무를 만들지 못했습니다.");
+    return null;
+  }
+
+  const task = makeTask({
+    title: buildToolActionTaskTitle(action),
+    assigneeId,
+    status: "todo",
+    priority: status === "executed" ? "low" : "medium",
+    tags: ["#자동화후보", `#${getToolActionTypeLabel(action.actionType).replace(/\s+/g, "")}`],
+    source: "automation",
+    orchestrationRunId: action.sourceRunId || state.orch.remoteRunId || "",
+    orchestrationGoal: payload.goal || state.orch.goal || "",
+    resultText: buildToolActionMarkdown(action),
+  });
+
+  state.tasks.unshift(task);
+  const employee = getEmployee(assigneeId);
+  if (employee && !employee.currentTaskId && employee.status !== "working" && employee.status !== "review") {
+    setEmployeeForTask(assigneeId, null, "preparing");
+  }
+  action.metadata = {
+    ...(action.metadata ?? {}),
+    boardTaskId: task.id,
+    boardTaskCreatedAt: new Date().toISOString(),
+  };
+  action.updatedAt = new Date().toISOString();
+  appendToolActionAuditLog(action, "task");
+  saveState();
+  syncRemoteTask(task);
+  updateRemoteToolAction(action);
+  renderKanban();
+  renderEmployeeDetail();
+  renderStats();
+  renderActiveView();
+  renderOrchestrationResults(buildStoredOrchestrationResult());
+  if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+  openTaskDrawer();
+  showToast("자동화 후보를 할 일판 업무로 등록했습니다.");
+  return task;
+}
+
+function buildToolActionTaskTitle(action = {}) {
+  const payload = action.payload ?? {};
+  const base = payload.subtask || action.title || "자동화 후보 실행 준비";
+  const label = getToolActionTypeLabel(action.actionType);
+  return `${label} · ${base}`.slice(0, 90);
+}
+
+function getEmployeeByName(name = "") {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) return null;
+  return state.employees.find((employee) => employee.name === cleanName) ?? null;
 }
 
 function buildToolActionDryRun(action = {}) {
@@ -2292,6 +2380,7 @@ function openToolActionPreview(action = {}) {
   const payload = action.payload ?? {};
   const status = normalizeToolActionStatus(action.status);
   const dryRun = action.metadata?.dryRun;
+  const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
   const safety = buildToolActionSafetySummary(action);
   refs.orchestrationDetailContent.innerHTML = `
     <div class="orch-detail-meta">
@@ -2322,6 +2411,12 @@ function openToolActionPreview(action = {}) {
       </ul>
       <p>${escapeHtml(safety.note)}</p>
     </section>
+    ${boardTask ? `
+      <section class="orch-linked-task">
+        <span>할 일판 연결</span>
+        <p>${escapeHtml(boardTask.title)} · ${escapeHtml(getTaskStatusLabel(boardTask))}</p>
+      </section>
+    ` : ""}
     ${dryRun?.outputText ? `
       <section class="orch-dry-run-output">
         <span>리허설 결과</span>
@@ -2335,6 +2430,7 @@ function openToolActionPreview(action = {}) {
         <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
       ` : ""}
       ${status === "pending" || status === "approved" ? `<button type="button" data-tool-action-control="dry-run" data-tool-action-id="${escapeHtml(action.id)}">리허설 실행</button>` : ""}
+      ${(status === "approved" || status === "executed") ? `<button type="button" data-tool-action-control="task" data-tool-action-id="${escapeHtml(action.id)}">${boardTask ? "할 일판 열기" : "할 일판 등록"}</button>` : ""}
       ${status === "approved" ? `<button type="button" data-tool-action-control="complete" data-tool-action-id="${escapeHtml(action.id)}">완료 표시</button>` : ""}
       <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
     </div>
@@ -2747,6 +2843,7 @@ function buildToolActionMarkdown(action = {}) {
   const payload = action.payload ?? {};
   const dryRun = action.metadata?.dryRun;
   const safety = buildToolActionSafetySummary(action);
+  const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
   const lines = [
     `# ${action.title || "도구 액션 초안"}`,
     "",
@@ -2773,6 +2870,17 @@ function buildToolActionMarkdown(action = {}) {
     ...safety.checks.map((check) => `- ${check.label}: ${check.value}`),
     `- 메모: ${safety.note}`,
   ];
+
+  if (boardTask) {
+    lines.push(
+      "",
+      "## 할 일판 연결",
+      "",
+      `- 업무: ${boardTask.title}`,
+      `- 상태: ${getTaskStatusLabel(boardTask)}`,
+      `- 담당: ${getEmployee(boardTask.assigneeId)?.name || boardTask.assigneeId}`,
+    );
+  }
 
   if (dryRun?.outputText) {
     lines.push(
@@ -2808,6 +2916,7 @@ function renderToolActions(actions = []) {
     const canComplete = status === "approved";
     const canDryRun = status === "pending" || status === "approved";
     const dryRun = action.metadata?.dryRun;
+    const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
     return `
       <article class="tool-action-card is-${escapeHtml(status)}${dryRun ? " has-dry-run" : ""}">
         <div>
@@ -2815,6 +2924,7 @@ function renderToolActions(actions = []) {
           <strong>${escapeHtml(action.title || "도구 액션 초안")}</strong>
           <p>${escapeHtml(action.description || "외부 실행 전 승인 대기 중인 초안입니다.")}</p>
           ${dryRun ? `<small>리허설 완료 · 외부 전송 없음</small>` : ""}
+          ${boardTask ? `<small class="is-board-task">할 일판 등록됨 · ${escapeHtml(getTaskStatusLabel(boardTask))}</small>` : ""}
         </div>
         <em>${escapeHtml(getToolActionStatusLabel(status))}</em>
         <div class="tool-action-controls">
@@ -2824,6 +2934,7 @@ function renderToolActions(actions = []) {
             <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
           ` : ""}
           ${canDryRun ? `<button type="button" data-tool-action-control="dry-run" data-tool-action-id="${escapeHtml(action.id)}">리허설</button>` : ""}
+          ${(status === "approved" || status === "executed") ? `<button type="button" data-tool-action-control="task" data-tool-action-id="${escapeHtml(action.id)}">${boardTask ? "할 일판 열기" : "할 일판 등록"}</button>` : ""}
           ${canComplete ? `<button type="button" data-tool-action-control="complete" data-tool-action-id="${escapeHtml(action.id)}">완료 표시</button>` : ""}
           <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
         </div>
@@ -4469,6 +4580,7 @@ function getTaskStatusLabel(task) {
 
 function getTaskSourceLabel(task) {
   if (task?.source === "orchestration") return "AI 분배";
+  if (task?.source === "automation") return "자동화 후보";
   if (task?.source === "manual") return "직접 지시";
   return "";
 }
@@ -4476,7 +4588,7 @@ function getTaskSourceLabel(task) {
 function renderTaskSourceBadge(task) {
   const label = getTaskSourceLabel(task);
   if (!label) return "";
-  const sourceClass = task?.source === "orchestration" ? "orchestration" : "manual";
+  const sourceClass = ["orchestration", "automation"].includes(task?.source) ? task.source : "manual";
   return `<span class="task-source-badge source-${sourceClass}">${escapeHtml(label)}</span>`;
 }
 

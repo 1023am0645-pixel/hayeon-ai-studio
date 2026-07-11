@@ -6879,6 +6879,12 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 900;
 }
 
+.tool-action-card small.is-board-task {
+  color: #6b4c16;
+  background: rgba(255, 240, 194, 0.88);
+  border-color: rgba(189, 139, 43, 0.18);
+}
+
 .tool-action-card > em {
   align-self: start;
   padding: 4px 8px;
@@ -7113,6 +7119,13 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   padding: 10px;
   background: rgba(255, 247, 229, 0.08);
   border: 1px solid rgba(217, 185, 112, 0.22);
+  border-radius: 14px;
+}
+
+.orch-linked-task {
+  padding: 10px;
+  background: rgba(255, 240, 194, 0.08);
+  border: 1px solid rgba(217, 185, 112, 0.24);
   border-radius: 14px;
 }
 

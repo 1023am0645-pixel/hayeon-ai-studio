@@ -1496,6 +1496,12 @@ textarea {
   color: #23645b;
 }
 
+.task-source-badge.source-automation {
+  border-color: rgba(180, 126, 40, 0.30);
+  background: rgba(255, 241, 205, 0.92);
+  color: #7c4c13;
+}
+
 .task-detail-meta .task-source-badge,
 .task-inline-summary .task-source-badge,
 .history-task-item .task-source-badge {

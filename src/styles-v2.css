@@ -632,6 +632,12 @@ body.v2-active .task-source-badge.source-orchestration {
   color: #a9f0ca;
 }
 
+body.v2-active .task-source-badge.source-automation {
+  border-color: rgba(245, 196, 106, 0.24);
+  background: rgba(245, 196, 106, 0.13);
+  color: #f8dda1;
+}
+
 body.v2-active .task-card.priority-high {
   border-left-color: rgba(215, 120, 60, 0.70);
 }
