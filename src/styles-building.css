@@ -6791,6 +6791,128 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   border-color: rgba(77, 151, 126, 0.20);
 }
 
+.tool-action-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background:
+    linear-gradient(145deg, rgba(248, 252, 255, 0.82), rgba(255, 247, 232, 0.74)),
+    rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(63, 126, 168, 0.18);
+  border-radius: 16px;
+}
+
+.tool-action-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.tool-action-head strong {
+  color: #253f52;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.tool-action-head span {
+  color: rgba(52, 76, 90, 0.64);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tool-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-action-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid rgba(63, 126, 168, 0.16);
+  border-radius: 13px;
+}
+
+.tool-action-card span,
+.tool-action-card strong,
+.tool-action-card p {
+  display: block;
+  min-width: 0;
+}
+
+.tool-action-card span {
+  color: rgba(63, 126, 168, 0.82);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+}
+
+.tool-action-card strong {
+  margin-top: 2px;
+  color: #273f4d;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.tool-action-card p {
+  margin: 4px 0 0;
+  color: rgba(50, 68, 78, 0.70);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.tool-action-card > em {
+  align-self: start;
+  padding: 4px 8px;
+  color: #6a451e;
+  background: rgba(255, 236, 184, 0.78);
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.tool-action-card.is-approved > em {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.88);
+}
+
+.tool-action-card.is-rejected > em {
+  color: #8a3b2f;
+  background: rgba(255, 225, 218, 0.88);
+}
+
+.tool-action-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.tool-action-controls button {
+  min-height: 29px;
+  padding: 5px 9px;
+  color: #2d4d62;
+  background: rgba(238, 249, 255, 0.86);
+  border: 1px solid rgba(63, 126, 168, 0.18);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.tool-action-controls button:hover,
+.tool-action-controls button:focus-visible {
+  color: #173448;
+  background: rgba(216, 241, 255, 0.94);
+  outline: none;
+}
+
 .orch-artifact-library-head {
   display: flex;
   align-items: center;

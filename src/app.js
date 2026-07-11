@@ -218,6 +218,14 @@ const artifactTypeLabels = {
   "automation-template": "자동화 템플릿",
   markdown: "일반 문서",
 };
+const toolActionTypeLabels = {
+  calendar_event: "일정 초안",
+  document_draft: "문서 초안",
+  email_draft: "메일 초안",
+  checklist: "체크리스트",
+  file_folder: "파일 정리",
+  automation_recipe: "자동화 레시피",
+};
 const artifactQualityChecks = {
   "lecture-plan": ["강의 목표와 대상이 드러나는가", "도입-전개-실습-마무리 흐름이 있는가", "PPT 구성이나 실습/리허설 체크가 포함됐는가"],
   "review-summary": ["실제 후기/반응을 지어내지 않았는가", "강점과 개선점이 분리됐는가", "다음 강의에 반영할 액션이 있는가"],
@@ -330,6 +338,7 @@ function getInitialOrchState() {
     summaryError: "",
     tasks: [],
     artifacts: [],
+    toolActions: [],
     logs: [],
     startedAt: 0,
     completedAt: 0,
@@ -346,6 +355,7 @@ function hydrateOrch(savedOrch = {}) {
     items: Array.isArray(savedOrch.items) ? savedOrch.items : [],
     tasks: Array.isArray(savedOrch.tasks) ? savedOrch.tasks : [],
     artifacts: Array.isArray(savedOrch.artifacts) ? savedOrch.artifacts : [],
+    toolActions: Array.isArray(savedOrch.toolActions) ? savedOrch.toolActions : [],
     logs: Array.isArray(savedOrch.logs) ? savedOrch.logs : [],
   };
 }
@@ -886,6 +896,7 @@ function bindEvents() {
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationArtifactAction);
+  refs.orchestrationResults.addEventListener("click", handleToolActionControl);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationAnswerToggle);
   refs.orchestrationResults.addEventListener("input", handleArtifactLibraryFilterInput);
   refs.orchestrationResults.addEventListener("change", handleArtifactLibraryFilterInput);
@@ -1274,6 +1285,7 @@ function hydrateOrchestrationFromRemoteRun(data) {
     items: hydratedItems,
     tasks: restoredTasks,
     artifacts: hydrateRemoteArtifacts(artifacts, runId),
+    toolActions: [],
     logs: buildRestoredOrchestrationLogs(run, hydratedItems),
   };
 }
@@ -1870,6 +1882,30 @@ function handleRemoteOrchestrationSyncError(error) {
   console.warn("remote orchestration sync failed:", error);
 }
 
+function syncRemoteToolAction(action) {
+  if (!automationStore?.upsertToolAction || !action || !isAdminLoggedIn()) return;
+  void automationStore.upsertToolAction(action).catch(handleRemoteToolActionSyncError);
+}
+
+function updateRemoteToolAction(action) {
+  if (!automationStore?.updateToolAction || !action?.id || !isAdminLoggedIn()) return;
+  void automationStore.updateToolAction(action.id, {
+    status: action.status,
+    approvalNote: action.approvalNote ?? "",
+    metadata: {
+      safeMode: true,
+      externalExecution: false,
+      clientUpdatedAt: new Date().toISOString(),
+    },
+  }).catch(handleRemoteToolActionSyncError);
+}
+
+function handleRemoteToolActionSyncError(error) {
+  if (automationStore?.isStorageMissing?.(error)) return;
+  if (String(error?.detail || error?.message || "").includes("no such table")) return;
+  console.warn("remote tool action sync failed:", error);
+}
+
 function handleRemoteTaskSyncError(error) {
   if (automationStore?.isStorageMissing?.(error)) return;
   console.warn("remote task sync failed:", error);
@@ -2010,6 +2046,43 @@ function handleOrchestrationAnswerToggle(event) {
   const isExpanded = wrap.classList.toggle("is-expanded");
   button.setAttribute("aria-expanded", String(isExpanded));
   button.textContent = isExpanded ? "접기" : "더보기";
+}
+
+async function handleToolActionControl(event) {
+  const button = event.target.closest("[data-tool-action-control]");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const action = findToolAction(button.dataset.toolActionId);
+  if (!action) return;
+  const command = button.dataset.toolActionControl;
+
+  if (command === "approve" || command === "reject") {
+    action.status = command === "approve" ? "approved" : "rejected";
+    action.approvalNote = command === "approve"
+      ? "운영자가 실행 후보로 승인했습니다. 외부 실행은 아직 연결되지 않았습니다."
+      : "운영자가 보류했습니다.";
+    action.updatedAt = new Date().toISOString();
+    updateRemoteToolAction(action);
+    saveState();
+    renderOrchestrationResults(buildStoredOrchestrationResult());
+    showToast(command === "approve" ? "도구 액션 초안을 승인했습니다." : "도구 액션 초안을 보류했습니다.");
+    return;
+  }
+
+  if (command === "copy") {
+    try {
+      await copyTextToClipboard(buildToolActionMarkdown(action));
+      showToast("도구 액션 초안을 복사했습니다.");
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 복사하지 못했습니다.");
+    }
+  }
+}
+
+function findToolAction(actionId) {
+  return (state.orch.toolActions ?? []).find((action) => action.id === actionId) ?? null;
 }
 
 function findOrchestrationItem(key) {
@@ -2365,6 +2438,7 @@ function buildStoredOrchestrationResult() {
     summary: state.orch.summary,
     summaryError: state.orch.summaryError,
     artifacts: Array.isArray(state.orch.artifacts) ? state.orch.artifacts : [],
+    toolActions: Array.isArray(state.orch.toolActions) ? state.orch.toolActions : [],
   };
 }
 
@@ -2408,6 +2482,76 @@ function buildOrchestrationItemMarkdown(item) {
     "",
     body,
   ].join("\n");
+}
+
+function buildToolActionMarkdown(action = {}) {
+  const payload = action.payload ?? {};
+  return [
+    `# ${action.title || "도구 액션 초안"}`,
+    "",
+    `- 유형: ${getToolActionTypeLabel(action.actionType)}`,
+    `- 상태: ${getToolActionStatusLabel(action.status)}`,
+    `- 실행 여부: 외부 실행 안 함`,
+    action.sourceRunId ? `- 실행 ID: ${action.sourceRunId}` : "",
+    "",
+    "## 설명",
+    "",
+    action.description || "설명이 없습니다.",
+    "",
+    "## 원 지시",
+    "",
+    payload.subtask || "연결된 지시가 없습니다.",
+    "",
+    "## 내용 미리보기",
+    "",
+    payload.contentPreview || "미리보기가 없습니다.",
+  ].filter((line) => line !== "").join("\n");
+}
+
+function getToolActionStatusLabel(status) {
+  const labels = {
+    pending: "승인 대기",
+    approved: "승인됨",
+    rejected: "보류",
+    executed: "실행됨",
+    cancelled: "취소",
+  };
+  return labels[status] ?? labels.pending;
+}
+
+function renderToolActions(actions = []) {
+  if (!actions.length) return "";
+  const rows = actions.map((action) => {
+    const status = normalizeToolActionStatus(action.status);
+    const canDecide = status === "pending";
+    return `
+      <article class="tool-action-card is-${escapeHtml(status)}">
+        <div>
+          <span>${escapeHtml(getToolActionTypeLabel(action.actionType))}</span>
+          <strong>${escapeHtml(action.title || "도구 액션 초안")}</strong>
+          <p>${escapeHtml(action.description || "외부 실행 전 승인 대기 중인 초안입니다.")}</p>
+        </div>
+        <em>${escapeHtml(getToolActionStatusLabel(status))}</em>
+        <div class="tool-action-controls">
+          ${canDecide ? `
+            <button type="button" data-tool-action-control="approve" data-tool-action-id="${escapeHtml(action.id)}">승인</button>
+            <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
+          ` : ""}
+          <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  return `
+    <section class="tool-action-panel" aria-label="승인 대기 자동화 후보">
+      <div class="tool-action-head">
+        <strong>자동화 후보</strong>
+        <span>외부 실행 없이 승인 대기 초안만 생성됩니다.</span>
+      </div>
+      <div class="tool-action-list">${rows}</div>
+    </section>
+  `;
 }
 
 function buildOrchestrationRunMarkdown(result = buildStoredOrchestrationResult()) {
@@ -2519,6 +2663,111 @@ function getArtifactContent(artifact = {}) {
   ].join("\n");
 }
 
+function getToolActionTypeLabel(type) {
+  return toolActionTypeLabels[type] ?? toolActionTypeLabels.document_draft;
+}
+
+function normalizeToolActionStatus(status) {
+  return ["pending", "approved", "rejected", "executed", "cancelled"].includes(status) ? status : "pending";
+}
+
+function getToolActionTypeForArtifact(artifactType, item = {}) {
+  if (artifactType === "lecture-plan" || /일정|리허설|마감|캘린더/.test(item.subtask ?? "")) return "calendar_event";
+  if (artifactType === "app-spec") return "checklist";
+  if (artifactType === "automation-template") return "automation_recipe";
+  if (artifactType === "ax-report" && /제출|보고|공유|메일/.test(item.subtask ?? "")) return "email_draft";
+  return "document_draft";
+}
+
+function getToolActionTitle(type, item = {}) {
+  const employeeName = item.employeeName || item.name || getEmployee(item.employeeId)?.name || "AI 직원";
+  const titles = {
+    calendar_event: `${employeeName} 산출물로 일정 초안 만들기`,
+    document_draft: `${employeeName} 산출물 문서화`,
+    email_draft: `${employeeName} 산출물로 공유 메일 초안 만들기`,
+    checklist: `${employeeName} 산출물 체크리스트화`,
+    file_folder: `${employeeName} 산출물 파일 정리`,
+    automation_recipe: `${employeeName} 산출물 자동화 템플릿화`,
+  };
+  return titles[type] ?? titles.document_draft;
+}
+
+function makeToolActionId(item = {}, actionType = "document_draft") {
+  const runId = state.orch.remoteRunId || "local";
+  const key = item.key || `${item.employeeId || "employee"}-${item.subtask || "task"}`;
+  return `tool-${runId}-${key}-${actionType}`
+    .replace(/[^a-z0-9가-힣_-]+/gi, "-")
+    .slice(0, 180);
+}
+
+function buildToolActionDrafts(result = {}) {
+  const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
+  const results = Array.isArray(result.results) ? result.results : [];
+  return results
+    .filter((item) => !item.error && item.text)
+    .slice(0, 8)
+    .map((item) => {
+      const artifact = artifacts.find((entry) =>
+        entry.itemKey === item.key || entry.taskId === item.taskId || (entry.employeeId === item.employeeId && entry.title === item.subtask)
+      );
+      const artifactType = artifact ? getArtifactTypeFromArtifact(artifact) : inferArtifactType({
+        employeeId: item.employeeId,
+        subtask: item.subtask,
+        name: item.employeeName,
+        text: item.text,
+      });
+      const actionType = getToolActionTypeForArtifact(artifactType, item);
+      const content = artifact ? getArtifactContent(artifact) : buildOrchestrationItemMarkdown(item);
+      return {
+        id: makeToolActionId(item, actionType),
+        sourceRunId: state.orch.remoteRunId ?? "",
+        sourceArtifactId: artifact?.id ?? "",
+        sourceTaskId: item.taskId ?? "",
+        actionType,
+        title: getToolActionTitle(actionType, item),
+        description: [
+          `${getToolActionTypeLabel(actionType)}으로 전환할 수 있는 승인 대기 초안입니다.`,
+          `원 지시: ${item.subtask || "등록된 지시 없음"}`,
+        ].join("\n"),
+        status: "pending",
+        payload: {
+          goal: result.goal || state.orch.goal || "",
+          subtask: item.subtask || "",
+          employeeId: item.employeeId || "",
+          employeeName: item.employeeName || item.name || "",
+          artifactType,
+          contentPreview: compactOrchestrationHandoffText(content, 700),
+        },
+        metadata: {
+          source: "orchestration",
+          safeMode: true,
+          externalExecution: false,
+          scenarioId: state.orch.scenarioId ?? "",
+          scenarioLabel: state.orch.scenarioLabel ?? "",
+          artifactType,
+          artifactTypeLabel: getArtifactTypeLabel(artifactType),
+        },
+      };
+    });
+}
+
+function mergeOrchestrationToolActions(drafts = []) {
+  const existing = new Map((state.orch.toolActions ?? []).map((action) => [action.id, action]));
+  const next = drafts.map((draft) => {
+    const previous = existing.get(draft.id);
+    return {
+      ...draft,
+      status: normalizeToolActionStatus(previous?.status ?? draft.status),
+      approvalNote: previous?.approvalNote ?? draft.approvalNote ?? "",
+      updatedAt: previous?.updatedAt ?? draft.updatedAt ?? new Date().toISOString(),
+    };
+  });
+  const draftIds = new Set(next.map((action) => action.id));
+  const extras = (state.orch.toolActions ?? []).filter((action) => !draftIds.has(action.id));
+  state.orch.toolActions = [...next, ...extras].slice(0, 20);
+  state.orch.toolActions.forEach(syncRemoteToolAction);
+}
+
 function syncOrchestrationResult(result) {
   state.orch.running = false;
   state.orch.summary = result.summary ?? "";
@@ -2529,6 +2778,7 @@ function syncOrchestrationResult(result) {
     assigneeId: task.assigneeId,
     status: task.status,
   }));
+  mergeOrchestrationToolActions(buildToolActionDrafts(result));
   state.orch.completedAt = result.pendingReview ? 0 : Date.now();
   saveState();
   syncRemoteOrchestrationRun({
@@ -2587,6 +2837,7 @@ function renderOrchestrationResults(result) {
   }).join("");
   const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
   const artifactBlock = renderOrchestrationArtifacts(artifacts);
+  const toolActionBlock = renderToolActions(result.toolActions ?? state.orch.toolActions ?? []);
 
   refs.orchestrationResults.innerHTML = `
     <div class="orch-result-summary">
@@ -2602,6 +2853,7 @@ function renderOrchestrationResults(result) {
     </div>
     ${summaryBlock}
     ${artifactBlock}
+    ${toolActionBlock}
     ${rows || "<p class=\"orch-empty\">선정된 직원이 없습니다.</p>"}
   `;
 }
