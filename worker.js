@@ -949,6 +949,16 @@ async function getAutomationRun(db, runId, requestId) {
     WHERE run_id = ?
     ORDER BY created_at ASC
   `).bind(id).all();
+  let toolActions = { results: [] };
+  try {
+    toolActions = await db.prepare(`
+      SELECT * FROM tool_actions
+      WHERE source_run_id = ?
+      ORDER BY created_at ASC
+    `).bind(id).all();
+  } catch (error) {
+    if (!String(error).includes("no such table")) throw error;
+  }
 
   return json({
     ok: true,
@@ -957,6 +967,7 @@ async function getAutomationRun(db, runId, requestId) {
       run,
       items: items.results ?? [],
       artifacts: artifacts.results ?? [],
+      toolActions: toolActions.results ?? [],
     },
     requestId,
   });

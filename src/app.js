@@ -897,6 +897,7 @@ function bindEvents() {
   refs.orchestrationResults.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationArtifactAction);
   refs.orchestrationResults.addEventListener("click", handleToolActionControl);
+  refs.orchestrationDetail.addEventListener("click", handleToolActionControl);
   refs.orchestrationResults.addEventListener("click", handleOrchestrationAnswerToggle);
   refs.orchestrationResults.addEventListener("input", handleArtifactLibraryFilterInput);
   refs.orchestrationResults.addEventListener("change", handleArtifactLibraryFilterInput);
@@ -1285,7 +1286,7 @@ function hydrateOrchestrationFromRemoteRun(data) {
     items: hydratedItems,
     tasks: restoredTasks,
     artifacts: hydrateRemoteArtifacts(artifacts, runId),
-    toolActions: [],
+    toolActions: hydrateRemoteToolActions(data?.toolActions ?? []),
     logs: buildRestoredOrchestrationLogs(run, hydratedItems),
   };
 }
@@ -1310,6 +1311,30 @@ function hydrateRemoteArtifacts(artifacts, runId = "") {
       metadata,
       createdAt: artifact.created_at ?? "",
       updatedAt: artifact.updated_at ?? "",
+    };
+  });
+}
+
+function hydrateRemoteToolActions(actions = []) {
+  return actions.map((action, index) => {
+    const payload = safeParseJson(action.payload_json);
+    const metadata = safeParseJson(action.metadata_json);
+    return {
+      id: action.id ?? `tool-action-${index}`,
+      sourceRunId: action.source_run_id ?? "",
+      sourceArtifactId: action.source_artifact_id ?? "",
+      sourceTaskId: action.source_task_id ?? "",
+      actionType: action.action_type ?? "document_draft",
+      title: action.title ?? "도구 액션 초안",
+      description: action.description ?? "",
+      status: normalizeToolActionStatus(action.status),
+      payload,
+      approvalNote: action.approval_note ?? "",
+      metadata,
+      createdAt: action.created_at ?? "",
+      updatedAt: action.updated_at ?? "",
+      approvedAt: action.approved_at ?? "",
+      executedAt: action.executed_at ?? "",
     };
   });
 }
@@ -1364,6 +1389,21 @@ function appendOrchestrationUpdateLog(update, key, status, employeeName) {
     key,
     name: employeeName,
     message: getOrchestrationLogMessage(update, status, employeeName),
+  });
+}
+
+function appendToolActionAuditLog(action = {}, event = "updated") {
+  const labels = {
+    approved: "승인됨",
+    rejected: "보류됨",
+    dryRun: "리허설 완료",
+    executed: "완료 표시",
+  };
+  appendOrchestrationLog({
+    phase: `tool-${event}`,
+    key: action.id ?? "",
+    name: "자동화 후보",
+    message: `${action.title || "도구 액션 초안"} · ${labels[event] ?? "상태 변경"} · 외부 실행 없음`,
   });
 }
 
@@ -1893,6 +1933,7 @@ function updateRemoteToolAction(action) {
     status: action.status,
     approvalNote: action.approvalNote ?? "",
     metadata: {
+      ...(action.metadata ?? {}),
       safeMode: true,
       externalExecution: false,
       clientUpdatedAt: new Date().toISOString(),
@@ -2064,10 +2105,37 @@ async function handleToolActionControl(event) {
       ? "운영자가 실행 후보로 승인했습니다. 외부 실행은 아직 연결되지 않았습니다."
       : "운영자가 보류했습니다.";
     action.updatedAt = new Date().toISOString();
+    appendToolActionAuditLog(action, command === "approve" ? "approved" : "rejected");
     updateRemoteToolAction(action);
     saveState();
     renderOrchestrationResults(buildStoredOrchestrationResult());
+    if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
     showToast(command === "approve" ? "도구 액션 초안을 승인했습니다." : "도구 액션 초안을 보류했습니다.");
+    return;
+  }
+
+  if (command === "preview") {
+    openToolActionPreview(action);
+    return;
+  }
+
+  if (command === "complete") {
+    const confirmed = window.confirm("외부 서비스에는 아무 것도 보내지 않고, 이 자동화 후보를 실행 완료 상태로 표시할까요?");
+    if (!confirmed) return;
+    action.status = "executed";
+    action.approvalNote = "외부 실행 없이 운영자가 완료 표시했습니다.";
+    action.updatedAt = new Date().toISOString();
+    appendToolActionAuditLog(action, "executed");
+    updateRemoteToolAction(action);
+    saveState();
+    renderOrchestrationResults(buildStoredOrchestrationResult());
+    if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+    showToast("자동화 후보를 실행 완료로 표시했습니다.");
+    return;
+  }
+
+  if (command === "dry-run") {
+    runToolActionDryRun(action);
     return;
   }
 
@@ -2083,6 +2151,196 @@ async function handleToolActionControl(event) {
 
 function findToolAction(actionId) {
   return (state.orch.toolActions ?? []).find((action) => action.id === actionId) ?? null;
+}
+
+function runToolActionDryRun(action = {}) {
+  if (!action?.id) return;
+  const dryRun = buildToolActionDryRun(action);
+  action.metadata = {
+    ...(action.metadata ?? {}),
+    dryRun,
+    safeMode: true,
+    externalExecution: false,
+  };
+  action.updatedAt = dryRun.at;
+  appendToolActionAuditLog(action, "dryRun");
+  updateRemoteToolAction(action);
+  saveState();
+  renderOrchestrationResults(buildStoredOrchestrationResult());
+  if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+  showToast("외부 전송 없이 자동화 리허설 결과를 생성했습니다.");
+}
+
+function buildToolActionDryRun(action = {}) {
+  const payload = action.payload ?? {};
+  const actionType = action.actionType || "document_draft";
+  const previewLines = extractDryRunLines(payload.contentPreview || action.description || "", 6);
+  const sourceTitle = payload.subtask || action.title || "자동화 후보";
+  const employeeName = payload.employeeName || getEmployee(payload.employeeId)?.name || "담당 직원";
+  const commonWarnings = [
+    "외부 캘린더/메일/드라이브에는 전송하지 않았습니다.",
+    "실제 실행 전 날짜, 수신자, 파일명처럼 운영자가 확인할 값이 남아 있습니다.",
+  ];
+  const builders = {
+    calendar_event: () => [
+      `일정 제목: ${sourceTitle}`,
+      `담당: ${employeeName}`,
+      "예상 길이: 60분",
+      "초안 안건:",
+      ...prefixDryRunLines(previewLines, "- "),
+      "확인 필요: 실제 날짜와 참석자",
+    ],
+    document_draft: () => [
+      `문서 제목: ${sourceTitle}`,
+      `작성 기준: ${employeeName} 산출물`,
+      "권장 섹션:",
+      ...prefixDryRunLines(previewLines, "- "),
+      "확인 필요: 최종 제목과 공유 위치",
+    ],
+    email_draft: () => [
+      `메일 제목: ${sourceTitle}`,
+      "수신자: 확인 필요",
+      `작성 기준: ${employeeName} 산출물`,
+      "본문 핵심:",
+      ...prefixDryRunLines(previewLines, "- "),
+      "확인 필요: 수신자, 첨부 파일, 발송 시점",
+    ],
+    checklist: () => [
+      `체크리스트 이름: ${sourceTitle}`,
+      "검수 항목:",
+      ...prefixDryRunLines(previewLines, "- [ ] "),
+      "확인 필요: 완료 기준과 담당자",
+    ],
+    file_folder: () => [
+      `정리 폴더명: ${sourceTitle}`,
+      "권장 파일:",
+      ...prefixDryRunLines(previewLines.slice(0, 4), "- "),
+      "확인 필요: 실제 저장 위치와 파일명 규칙",
+    ],
+    automation_recipe: () => [
+      `자동화 이름: ${sourceTitle}`,
+      "트리거: 운영자가 업무 시작 시 수동 승인",
+      "처리 흐름:",
+      ...prefixDryRunLines(previewLines, "- "),
+      "확인 필요: 입력값, 예외 처리, 검수 기준",
+    ],
+  };
+  const outputLines = (builders[actionType] ?? builders.document_draft)();
+  return {
+    at: new Date().toISOString(),
+    adapter: "local-dry-run-v1",
+    externalExecution: false,
+    outputText: outputLines.join("\n").slice(0, 1600),
+    warnings: commonWarnings,
+  };
+}
+
+function buildToolActionSafetySummary(action = {}) {
+  const payload = action.payload ?? {};
+  const status = normalizeToolActionStatus(action.status);
+  const content = [
+    action.title,
+    action.description,
+    payload.goal,
+    payload.subtask,
+    payload.contentPreview,
+  ].filter(Boolean).join("\n");
+  const hasContactPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}\b/i.test(content);
+  const typeNeeds = {
+    calendar_event: "날짜·시간·참석자 확인",
+    document_draft: "문서 제목·저장 위치 확인",
+    email_draft: "수신자·첨부·발송 시점 확인",
+    checklist: "완료 기준·담당자 확인",
+    file_folder: "저장 위치·파일명 규칙 확인",
+    automation_recipe: "입력값·예외 처리·검수 기준 확인",
+  };
+  const checks = [
+    { label: "외부 전송", value: "차단됨", tone: "safe" },
+    { label: "승인 상태", value: status === "pending" ? "승인 필요" : getToolActionStatusLabel(status), tone: status === "rejected" ? "warn" : "safe" },
+    { label: "확인 필요", value: typeNeeds[action.actionType] ?? typeNeeds.document_draft, tone: "warn" },
+    { label: "연락처 패턴", value: hasContactPattern ? "검토 필요" : "감지 안 됨", tone: hasContactPattern ? "warn" : "safe" },
+  ];
+  return {
+    riskLevel: hasContactPattern ? "medium" : "low",
+    riskLabel: hasContactPattern ? "주의 필요" : "낮음",
+    checks,
+    note: hasContactPattern
+      ? "본문에 이메일 또는 전화번호로 보이는 값이 있어 실제 실행 전 수신자와 공개 범위를 확인해야 합니다."
+      : "현재 후보는 로컬 초안과 리허설만 생성하며, 외부 서비스로 자동 전송하지 않습니다.",
+  };
+}
+
+function extractDryRunLines(text = "", limit = 5) {
+  const lines = String(text || "")
+    .split(/\n|(?:^|\s)[-*]\s+/)
+    .map((line) => line
+      .replace(/^#+\s*/, "")
+      .replace(/\*\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim())
+    .filter(Boolean)
+    .filter((line) => !/^#/.test(line));
+  const uniqueLines = [...new Set(lines)].slice(0, limit);
+  return uniqueLines.length ? uniqueLines : ["원문 산출물을 기준으로 실행 직전 초안을 구성합니다."];
+}
+
+function prefixDryRunLines(lines = [], prefix = "- ") {
+  return lines.map((line) => `${prefix}${line}`);
+}
+
+function openToolActionPreview(action = {}) {
+  const payload = action.payload ?? {};
+  const status = normalizeToolActionStatus(action.status);
+  const dryRun = action.metadata?.dryRun;
+  const safety = buildToolActionSafetySummary(action);
+  refs.orchestrationDetailContent.innerHTML = `
+    <div class="orch-detail-meta">
+      <span class="orch-detail-status is-${escapeHtml(status)}">${escapeHtml(getToolActionStatusLabel(status))}</span>
+      <strong>${escapeHtml(action.title || "도구 액션 초안")}</strong>
+    </div>
+    <section>
+      <span>실행 방식</span>
+      <p>${escapeHtml("현재 단계에서는 캘린더·메일·드라이브 등 외부 서비스로 전송하지 않습니다. 아래 초안을 확인하고 복사하거나 완료 표시만 할 수 있습니다.")}</p>
+    </section>
+    <section>
+      <span>원 지시</span>
+      <p>${escapeHtml(payload.subtask || action.description || "연결된 지시가 없습니다.")}</p>
+    </section>
+    <section>
+      <span>미리보기</span>
+      <p>${escapeHtml(payload.contentPreview || "미리보기가 없습니다.")}</p>
+    </section>
+    <section class="orch-safety-summary is-${escapeHtml(safety.riskLevel)}">
+      <span>실행 전 점검 · ${escapeHtml(safety.riskLabel)}</span>
+      <ul>
+        ${safety.checks.map((check) => `
+          <li class="is-${escapeHtml(check.tone)}">
+            <strong>${escapeHtml(check.label)}</strong>
+            <em>${escapeHtml(check.value)}</em>
+          </li>
+        `).join("")}
+      </ul>
+      <p>${escapeHtml(safety.note)}</p>
+    </section>
+    ${dryRun?.outputText ? `
+      <section class="orch-dry-run-output">
+        <span>리허설 결과</span>
+        <p>${escapeHtml(dryRun.outputText)}</p>
+        <small>${escapeHtml((dryRun.warnings ?? []).join(" · "))}</small>
+      </section>
+    ` : ""}
+    <div class="orch-detail-actions">
+      ${status === "pending" ? `
+        <button type="button" data-tool-action-control="approve" data-tool-action-id="${escapeHtml(action.id)}">승인</button>
+        <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
+      ` : ""}
+      ${status === "pending" || status === "approved" ? `<button type="button" data-tool-action-control="dry-run" data-tool-action-id="${escapeHtml(action.id)}">리허설 실행</button>` : ""}
+      ${status === "approved" ? `<button type="button" data-tool-action-control="complete" data-tool-action-id="${escapeHtml(action.id)}">완료 표시</button>` : ""}
+      <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
+    </div>
+  `;
+  refs.orchestrationDetail.dataset.toolActionId = action.id ?? "";
+  refs.orchestrationDetail.classList.remove("is-hidden");
 }
 
 function findOrchestrationItem(key) {
@@ -2309,6 +2567,7 @@ function closeOrchestrationDetail() {
   refs.orchestrationDetail.classList.add("is-hidden");
   refs.orchestrationDetail.removeAttribute("data-orch-key");
   refs.orchestrationDetail.removeAttribute("data-artifact-id");
+  refs.orchestrationDetail.removeAttribute("data-tool-action-id");
   refs.orchestrationDetailContent.innerHTML = "";
 }
 
@@ -2486,7 +2745,9 @@ function buildOrchestrationItemMarkdown(item) {
 
 function buildToolActionMarkdown(action = {}) {
   const payload = action.payload ?? {};
-  return [
+  const dryRun = action.metadata?.dryRun;
+  const safety = buildToolActionSafetySummary(action);
+  const lines = [
     `# ${action.title || "도구 액션 초안"}`,
     "",
     `- 유형: ${getToolActionTypeLabel(action.actionType)}`,
@@ -2505,7 +2766,27 @@ function buildToolActionMarkdown(action = {}) {
     "## 내용 미리보기",
     "",
     payload.contentPreview || "미리보기가 없습니다.",
-  ].filter((line) => line !== "").join("\n");
+    "",
+    "## 실행 전 점검",
+    "",
+    `- 위험도: ${safety.riskLabel}`,
+    ...safety.checks.map((check) => `- ${check.label}: ${check.value}`),
+    `- 메모: ${safety.note}`,
+  ];
+
+  if (dryRun?.outputText) {
+    lines.push(
+      "",
+      "## 리허설 결과",
+      "",
+      dryRun.outputText,
+    );
+    if (Array.isArray(dryRun.warnings) && dryRun.warnings.length) {
+      lines.push("", "## 주의", "", ...dryRun.warnings.map((warning) => `- ${warning}`));
+    }
+  }
+
+  return lines.join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
 }
 
 function getToolActionStatusLabel(status) {
@@ -2524,19 +2805,26 @@ function renderToolActions(actions = []) {
   const rows = actions.map((action) => {
     const status = normalizeToolActionStatus(action.status);
     const canDecide = status === "pending";
+    const canComplete = status === "approved";
+    const canDryRun = status === "pending" || status === "approved";
+    const dryRun = action.metadata?.dryRun;
     return `
-      <article class="tool-action-card is-${escapeHtml(status)}">
+      <article class="tool-action-card is-${escapeHtml(status)}${dryRun ? " has-dry-run" : ""}">
         <div>
           <span>${escapeHtml(getToolActionTypeLabel(action.actionType))}</span>
           <strong>${escapeHtml(action.title || "도구 액션 초안")}</strong>
           <p>${escapeHtml(action.description || "외부 실행 전 승인 대기 중인 초안입니다.")}</p>
+          ${dryRun ? `<small>리허설 완료 · 외부 전송 없음</small>` : ""}
         </div>
         <em>${escapeHtml(getToolActionStatusLabel(status))}</em>
         <div class="tool-action-controls">
+          <button type="button" data-tool-action-control="preview" data-tool-action-id="${escapeHtml(action.id)}">미리보기</button>
           ${canDecide ? `
             <button type="button" data-tool-action-control="approve" data-tool-action-id="${escapeHtml(action.id)}">승인</button>
             <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
           ` : ""}
+          ${canDryRun ? `<button type="button" data-tool-action-control="dry-run" data-tool-action-id="${escapeHtml(action.id)}">리허설</button>` : ""}
+          ${canComplete ? `<button type="button" data-tool-action-control="complete" data-tool-action-id="${escapeHtml(action.id)}">완료 표시</button>` : ""}
           <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
         </div>
       </article>
@@ -2597,6 +2885,29 @@ function buildOrchestrationRunMarkdown(result = buildStoredOrchestrationResult()
         getArtifactContent(artifact),
         "",
       );
+    });
+  }
+
+  const toolActions = Array.isArray(result.toolActions) ? result.toolActions : [];
+  if (toolActions.length) {
+    lines.push("## 자동화 후보", "");
+    toolActions.forEach((action, index) => {
+      const dryRun = action.metadata?.dryRun;
+      const safety = buildToolActionSafetySummary(action);
+      lines.push(
+        `### ${index + 1}. ${action.title || "도구 액션 초안"}`,
+        "",
+        `- 유형: ${getToolActionTypeLabel(action.actionType)}`,
+        `- 상태: ${getToolActionStatusLabel(action.status)}`,
+        `- 외부 실행: 안 함`,
+        `- 실행 전 점검: ${safety.riskLabel}`,
+        "",
+        action.description || "설명이 없습니다.",
+        "",
+      );
+      if (dryRun?.outputText) {
+        lines.push("#### 리허설 결과", "", dryRun.outputText, "");
+      }
     });
   }
 
@@ -2759,6 +3070,10 @@ function mergeOrchestrationToolActions(drafts = []) {
       ...draft,
       status: normalizeToolActionStatus(previous?.status ?? draft.status),
       approvalNote: previous?.approvalNote ?? draft.approvalNote ?? "",
+      metadata: {
+        ...(draft.metadata ?? {}),
+        ...(previous?.metadata ?? {}),
+      },
       updatedAt: previous?.updatedAt ?? draft.updatedAt ?? new Date().toISOString(),
     };
   });
