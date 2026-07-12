@@ -126,6 +126,38 @@ function updateToolAction(actionId, patch) {
   });
 }
 
+function listTemplates({ limit = 24 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 24, 1), 80);
+  return requestAutomation(`/api/automation/templates?limit=${safeLimit}`);
+}
+
+function upsertTemplate(template) {
+  if (!template) return Promise.resolve(null);
+  return requestAutomation("/api/automation/templates", {
+    method: "POST",
+    body: template,
+  });
+}
+
+function listAuditEvents({ limit = 40, sourceActionId = "" } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(Math.min(Math.max(Number(limit) || 40, 1), 120)));
+  if (sourceActionId) params.set("sourceActionId", sourceActionId);
+  return requestAutomation(`/api/automation/audit-events?${params.toString()}`);
+}
+
+function createAuditEvent(event) {
+  if (!event) return Promise.resolve(null);
+  return requestAutomation("/api/automation/audit-events", {
+    method: "POST",
+    body: event,
+  });
+}
+
+function getConnectors() {
+  return requestAutomation("/api/automation/connectors");
+}
+
 function upsertTask(task) {
   if (!task) return Promise.resolve(null);
   return requestAutomation("/api/automation/tasks", {
@@ -188,6 +220,11 @@ window.HayeonAutomationStore = {
   listToolActions,
   upsertToolAction,
   updateToolAction,
+  listTemplates,
+  upsertTemplate,
+  listAuditEvents,
+  createAuditEvent,
+  getConnectors,
   upsertTask,
   listTasks,
   deleteTask,

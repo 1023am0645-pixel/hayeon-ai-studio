@@ -96,6 +96,28 @@ async function handleAutomationRoute(request, env, url) {
       }
     }
 
+    if (url.pathname === "/api/automation/templates") {
+      if (request.method === "GET") {
+        return listAutomationTemplates(env.AGENT_DB, url, context.requestId);
+      }
+      if (request.method === "POST") {
+        const body = await parseJsonBody(request, context.requestId);
+        if (body instanceof Response) return body;
+        return upsertAutomationTemplate(env.AGENT_DB, body, context.requestId);
+      }
+    }
+
+    if (url.pathname === "/api/automation/audit-events") {
+      if (request.method === "GET") {
+        return listAutomationAuditEvents(env.AGENT_DB, url, context.requestId);
+      }
+      if (request.method === "POST") {
+        const body = await parseJsonBody(request, context.requestId);
+        if (body instanceof Response) return body;
+        return createAutomationAuditEvent(env.AGENT_DB, body, context.requestId);
+      }
+    }
+
     const toolActionMatch = url.pathname.match(/^\/api\/automation\/tool-actions\/([^/]+)$/);
     if (toolActionMatch && request.method === "PATCH") {
       const body = await parseJsonBody(request, context.requestId);
@@ -553,8 +575,189 @@ async function updateToolAction(db, actionId, body, requestId) {
   });
 }
 
+async function ensureAutomationTemplateAuditTables(db) {
+  await db.batch([
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS automation_templates (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        description TEXT,
+        goal TEXT NOT NULL,
+        artifact_type TEXT NOT NULL DEFAULT 'markdown',
+        action_type TEXT NOT NULL DEFAULT 'document_draft',
+        source_action_id TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_automation_templates_updated ON automation_templates (updated_at DESC)"),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS automation_audit_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        source_run_id TEXT,
+        source_action_id TEXT,
+        task_id TEXT,
+        title TEXT,
+        status TEXT,
+        message TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_automation_audit_created ON automation_audit_events (created_at DESC)"),
+  ]);
+}
+
+async function listAutomationTemplates(db, url, requestId) {
+  await ensureAutomationTemplateAuditTables(db);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 24, 1), 80);
+  const rows = await db.prepare(`
+    SELECT * FROM automation_templates
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ?
+  `).bind(limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: { templates: rows.results ?? [] },
+    requestId,
+  });
+}
+
+async function upsertAutomationTemplate(db, body, requestId) {
+  await ensureAutomationTemplateAuditTables(db);
+  const id = normalizeId(body.id ?? body.templateId ?? body.template_id, 120) || `tpl-${crypto.randomUUID()}`;
+  const label = nullableString(body.label ?? body.title, "", 160).trim();
+  const goal = nullableString(body.goal ?? body.content, "", 12000).trim();
+  if (!label || !goal) return agentError("bad_automation_template", 400, requestId);
+
+  const description = nullableString(body.desc ?? body.description, "", 1000);
+  const artifactType = normalizeId(body.artifactType ?? body.artifact_type, 80) || "markdown";
+  const actionType = normalizeToolActionType(body.actionType ?? body.action_type);
+  const sourceActionId = normalizeId(body.sourceActionId ?? body.source_action_id, 180) || null;
+  const metadata = stringifyMetadata(body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {});
+  const now = new Date().toISOString();
+
+  await db.prepare(`
+    INSERT INTO automation_templates (
+      id, label, description, goal, artifact_type, action_type, source_action_id,
+      metadata_json, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      label = excluded.label,
+      description = excluded.description,
+      goal = excluded.goal,
+      artifact_type = excluded.artifact_type,
+      action_type = excluded.action_type,
+      source_action_id = excluded.source_action_id,
+      metadata_json = excluded.metadata_json,
+      updated_at = excluded.updated_at
+  `).bind(
+    id,
+    label,
+    description,
+    goal,
+    artifactType,
+    actionType,
+    sourceActionId,
+    metadata,
+    now,
+    now,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      template: { id, label, description, goal, artifactType, actionType, sourceActionId, updatedAt: now },
+    },
+    requestId,
+  });
+}
+
+async function listAutomationAuditEvents(db, url, requestId) {
+  await ensureAutomationTemplateAuditTables(db);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 40, 1), 120);
+  const sourceActionId = normalizeId(url.searchParams.get("sourceActionId") ?? url.searchParams.get("source_action_id"), 180);
+  const clauses = [];
+  const binds = [];
+  if (sourceActionId) {
+    clauses.push("source_action_id = ?");
+    binds.push(sourceActionId);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await db.prepare(`
+    SELECT * FROM automation_audit_events
+    ${where}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).bind(...binds, limit).all();
+
+  return json({
+    ok: true,
+    text: "",
+    data: { events: rows.results ?? [] },
+    requestId,
+  });
+}
+
+async function createAutomationAuditEvent(db, body, requestId) {
+  await ensureAutomationTemplateAuditTables(db);
+  const id = normalizeId(body.id ?? body.eventId ?? body.event_id, 180) || `audit-${crypto.randomUUID()}`;
+  const eventType = normalizeId(body.eventType ?? body.event_type, 80) || "automation_event";
+  const sourceRunId = normalizeId(body.sourceRunId ?? body.source_run_id, 120) || null;
+  const sourceActionId = normalizeId(body.sourceActionId ?? body.source_action_id, 180) || null;
+  const taskId = normalizeId(body.taskId ?? body.task_id, 180) || null;
+  const title = nullableString(body.title, "", 500);
+  const status = nullableString(body.status, "", 80);
+  const message = nullableString(body.message, "", 2000);
+  const metadata = stringifyMetadata(body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata) ? body.metadata : {});
+  const createdAt = nullableString(body.createdAt ?? body.created_at, new Date().toISOString(), 120);
+
+  await db.prepare(`
+    INSERT INTO automation_audit_events (
+      id, event_type, source_run_id, source_action_id, task_id, title, status,
+      message, metadata_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      event_type = excluded.event_type,
+      source_run_id = excluded.source_run_id,
+      source_action_id = excluded.source_action_id,
+      task_id = excluded.task_id,
+      title = excluded.title,
+      status = excluded.status,
+      message = excluded.message,
+      metadata_json = excluded.metadata_json
+  `).bind(
+    id,
+    eventType,
+    sourceRunId,
+    sourceActionId,
+    taskId,
+    title,
+    status,
+    message,
+    metadata,
+    createdAt,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: { event: { id, eventType, sourceRunId, sourceActionId, taskId, status, createdAt } },
+    requestId,
+  }, 201);
+}
+
 async function clearAutomationData(db, requestId) {
   const tables = [
+    "automation_audit_events",
+    "automation_templates",
     "tool_actions",
     "artifacts",
     "chat_messages",

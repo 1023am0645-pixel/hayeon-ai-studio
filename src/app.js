@@ -25,6 +25,8 @@ let remoteTasksLoading = false;
 let remoteArtifactLibrary = [];
 let remoteArtifactLibraryLoaded = false;
 let remoteArtifactLibraryLoading = false;
+let remoteTemplatesLoaded = false;
+let remoteTemplatesLoading = false;
 let artifactLibraryFilters = {
   query: "",
   employeeId: "all",
@@ -264,6 +266,7 @@ function boot() {
   updateClock();
   render();
   loadRemoteTasksIfNeeded();
+  loadRemoteAutomationTemplatesIfNeeded();
   setInterval(updateClock, 30_000);
   setInterval(applyTimePhase, 60_000);
   setInterval(() => {
@@ -598,10 +601,13 @@ function handleAdminModalSubmit(event) {
   resetRemoteChatCache();
   resetRemoteTaskCache();
   resetRemoteArtifactLibraryCache();
+  resetRemoteTemplateCache();
   closeAdminModal();
   updateAdminButton();
   loadRemoteTasksIfNeeded({ force: true });
   loadRemoteArtifactLibrary({ force: true });
+  loadRemoteAutomationTemplatesIfNeeded({ force: true });
+  syncLocalAutomationTemplatesToRemote();
   if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
   showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
 }
@@ -616,6 +622,7 @@ function handleAdminModalClick(event) {
     resetRemoteChatCache();
     resetRemoteTaskCache();
     resetRemoteArtifactLibraryCache();
+    resetRemoteTemplateCache();
     closeAdminModal();
     updateAdminButton();
     showToast("관리자 로그아웃 됐습니다.");
@@ -668,12 +675,14 @@ function resetAutomationLocalCache() {
   state.tasks = clone(seedTasks).map(hydrateTask);
   state.chat = {};
   state.orch = getInitialOrchState();
+  state.automationTemplates = [];
   state.selectedTaskId = null;
   state.detailMode = "summary";
   syncEmployeeStatusFromActiveTasks();
   resetRemoteChatCache();
   resetRemoteTaskCache();
   resetRemoteArtifactLibraryCache();
+  resetRemoteTemplateCache();
   saveState();
 }
 
@@ -1032,6 +1041,7 @@ function openOrchestrationPanel() {
   renderStoredOrchestrationPanel();
   loadOrchestrationHistory();
   loadRemoteArtifactLibrary();
+  loadRemoteAutomationTemplatesIfNeeded({ force: true });
   refs.orchestrationGoal.focus();
 }
 
@@ -1453,15 +1463,17 @@ function safeParseJson(text) {
 
 function appendOrchestrationLog({ phase = "info", key = "", name = "", message = "" } = {}) {
   state.orch.logs = Array.isArray(state.orch.logs) ? state.orch.logs : [];
-  state.orch.logs.push({
+  const log = {
     id: `log-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
     at: new Date().toISOString(),
     phase,
     key,
     name,
     message,
-  });
+  };
+  state.orch.logs.push(log);
   state.orch.logs = state.orch.logs.slice(-80);
+  return log;
 }
 
 function appendOrchestrationUpdateLog(update, key, status, employeeName) {
@@ -1484,12 +1496,13 @@ function appendToolActionAuditLog(action = {}, event = "updated") {
     executeDone: "실제 실행 완료",
     template: "템플릿 저장",
   };
-  appendOrchestrationLog({
+  const log = appendOrchestrationLog({
     phase: `tool-${event}`,
     key: action.id ?? "",
     name: "자동화 후보",
     message: `${action.title || "도구 액션 초안"} · ${labels[event] ?? "상태 변경"} · 외부 실행 없음`,
   });
+  syncRemoteAuditEvent(action, event, log);
 }
 
 function getOrchestrationLogMessage(update, status, employeeName) {
@@ -2037,6 +2050,123 @@ function handleRemoteTaskSyncError(error) {
   console.warn("remote task sync failed:", error);
 }
 
+function syncRemoteAutomationTemplate(template) {
+  if (!automationStore?.upsertTemplate || !template || !isAdminLoggedIn()) return;
+  void automationStore.upsertTemplate(serializeRemoteAutomationTemplate(template)).catch(handleRemoteTemplateSyncError);
+}
+
+function syncLocalAutomationTemplatesToRemote() {
+  if (!automationStore?.upsertTemplate || !isAdminLoggedIn()) return;
+  hydrateAutomationTemplates(state.automationTemplates).forEach(syncRemoteAutomationTemplate);
+}
+
+function loadRemoteAutomationTemplatesIfNeeded({ force = false } = {}) {
+  if (!automationStore?.listTemplates || !isAdminLoggedIn()) return;
+  if (remoteTemplatesLoading) return;
+  if (remoteTemplatesLoaded && !force) return;
+
+  remoteTemplatesLoading = true;
+  void automationStore.listTemplates({ limit: 40 })
+    .then((data) => {
+      const changed = mergeRemoteAutomationTemplates(data?.templates ?? []);
+      remoteTemplatesLoaded = true;
+      if (changed) {
+        saveState();
+        renderOrchestrationTemplates();
+      }
+    })
+    .catch(handleRemoteTemplateSyncError)
+    .finally(() => { remoteTemplatesLoading = false; });
+}
+
+function mergeRemoteAutomationTemplates(remoteTemplates = []) {
+  if (!Array.isArray(remoteTemplates) || !remoteTemplates.length) return false;
+  const local = hydrateAutomationTemplates(state.automationTemplates);
+  const byId = new Map(local.map((template) => [template.id, template]));
+  let changed = false;
+
+  remoteTemplates.forEach((remoteTemplate) => {
+    const template = hydrateRemoteAutomationTemplate(remoteTemplate);
+    if (!template.id || !template.goal) return;
+    const previous = byId.get(template.id);
+    const previousTime = Date.parse(previous?.createdAt || "") || 0;
+    const nextTime = Date.parse(template.createdAt || "") || 0;
+    if (!previous || nextTime >= previousTime) {
+      byId.set(template.id, { ...previous, ...template });
+      changed = true;
+    }
+  });
+
+  if (!changed) return false;
+  state.automationTemplates = [...byId.values()]
+    .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
+    .slice(0, 16);
+  return true;
+}
+
+function hydrateRemoteAutomationTemplate(remoteTemplate = {}) {
+  const metadata = safeParseJson(remoteTemplate.metadata_json);
+  return {
+    id: remoteTemplate.id ?? "",
+    label: remoteTemplate.label ?? "자동화 템플릿",
+    desc: remoteTemplate.description ?? metadata.desc ?? "저장된 자동화 후보",
+    goal: remoteTemplate.goal ?? "",
+    artifactType: remoteTemplate.artifact_type ?? "markdown",
+    actionType: remoteTemplate.action_type ?? "document_draft",
+    createdAt: remoteTemplate.created_at ?? remoteTemplate.updated_at ?? "",
+    sourceActionId: remoteTemplate.source_action_id ?? "",
+  };
+}
+
+function serializeRemoteAutomationTemplate(template = {}) {
+  return {
+    id: template.id,
+    label: template.label,
+    desc: template.desc,
+    description: template.desc,
+    goal: template.goal,
+    artifactType: template.artifactType ?? "markdown",
+    actionType: template.actionType ?? "document_draft",
+    sourceActionId: template.sourceActionId ?? "",
+    metadata: {
+      source: "hayeon-ai-studio",
+      createdAt: template.createdAt ?? "",
+    },
+  };
+}
+
+function syncRemoteAuditEvent(action = {}, eventType = "updated", log = {}) {
+  if (!automationStore?.createAuditEvent || !isAdminLoggedIn()) return;
+  void automationStore.createAuditEvent({
+    id: `audit-${log.id || `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`}`,
+    eventType,
+    sourceRunId: action.sourceRunId || state.orch.remoteRunId || "",
+    sourceActionId: action.id ?? "",
+    taskId: action.metadata?.boardTaskId ?? "",
+    title: action.title ?? "",
+    status: normalizeToolActionStatus(action.status),
+    message: log.message ?? "",
+    createdAt: log.at ?? new Date().toISOString(),
+    metadata: {
+      phase: log.phase ?? "",
+      externalExecution: Boolean(action.metadata?.externalExecution),
+      safeMode: action.metadata?.safeMode !== false,
+    },
+  }).catch(handleRemoteAuditSyncError);
+}
+
+function handleRemoteTemplateSyncError(error) {
+  if (automationStore?.isStorageMissing?.(error)) return;
+  if (String(error?.detail || error?.message || "").includes("no such table")) return;
+  console.warn("remote template sync failed:", error);
+}
+
+function handleRemoteAuditSyncError(error) {
+  if (automationStore?.isStorageMissing?.(error)) return;
+  if (String(error?.detail || error?.message || "").includes("no such table")) return;
+  console.warn("remote audit sync failed:", error);
+}
+
 function handleOrchestrationReviewAction(event) {
   const actionButton = event.target.closest("[data-orch-action]");
   if (!actionButton) return;
@@ -2428,6 +2558,7 @@ function saveToolActionAsAutomationTemplate(action = {}) {
   action.updatedAt = template.createdAt;
   appendToolActionAuditLog(action, "template");
   saveState();
+  syncRemoteAutomationTemplate(template);
   updateRemoteToolAction(action);
   renderOrchestrationTemplates();
   renderOrchestrationResults(buildStoredOrchestrationResult());
@@ -3808,6 +3939,11 @@ function resetRemoteArtifactLibraryCache() {
   remoteArtifactLibraryLoaded = false;
   remoteArtifactLibraryLoading = false;
   resetArtifactLibraryFilters();
+}
+
+function resetRemoteTemplateCache() {
+  remoteTemplatesLoaded = false;
+  remoteTemplatesLoading = false;
 }
 
 function scrollAppToTop() {
