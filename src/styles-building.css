@@ -6285,6 +6285,222 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   line-height: 1.45;
 }
 
+.automation-ops {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(250, 255, 252, 0.64);
+  border: 1px solid rgba(77, 151, 126, 0.16);
+  border-radius: 16px;
+}
+
+.automation-ops-head,
+.automation-audit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.automation-ops-head strong,
+.automation-audit-head strong {
+  color: #243d32;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.automation-ops-head button {
+  padding: 6px 9px;
+  color: rgba(37, 72, 59, 0.78);
+  font-size: 12px;
+  font-weight: 850;
+  background: rgba(232, 250, 240, 0.82);
+  border: 1px solid rgba(77, 151, 126, 0.18);
+  border-radius: 999px;
+}
+
+.automation-connector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.automation-connector-card,
+.automation-background-card,
+.automation-policy-note,
+.automation-audit-item,
+.admin-automation-status {
+  min-width: 0;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(77, 151, 126, 0.14);
+  border-radius: 13px;
+}
+
+.automation-connector-card {
+  display: grid;
+  gap: 3px;
+  box-shadow: inset 3px 0 0 rgba(177, 147, 93, 0.26);
+}
+
+.automation-connector-card.is-on {
+  box-shadow: inset 3px 0 0 rgba(67, 150, 103, 0.40);
+}
+
+.automation-connector-card.is-ready {
+  box-shadow: inset 3px 0 0 rgba(216, 163, 68, 0.40);
+}
+
+.automation-connector-card.is-off {
+  box-shadow: inset 3px 0 0 rgba(139, 118, 90, 0.22);
+}
+
+.automation-connector-card span,
+.automation-background-card span {
+  color: rgba(37, 72, 59, 0.62);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.automation-connector-card strong,
+.automation-background-card strong,
+.automation-policy-note strong,
+.admin-automation-status strong {
+  color: #243d32;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.automation-connector-card em,
+.automation-background-card em,
+.automation-policy-note span,
+.automation-audit-head span,
+.admin-status-pills span {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  color: #5c4a2d;
+  background: rgba(255, 241, 208, 0.78);
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.automation-background-card,
+.automation-policy-note {
+  display: grid;
+  gap: 6px;
+}
+
+.automation-background-card p,
+.automation-policy-note p,
+.admin-automation-status p {
+  margin: 0;
+  color: rgba(37, 72, 59, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.automation-background-card div,
+.admin-status-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.automation-background-card em.is-on {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.90);
+}
+
+.automation-background-card em.is-off {
+  color: #8a4c2b;
+  background: rgba(255, 231, 204, 0.90);
+}
+
+.automation-audit-list {
+  display: grid;
+  gap: 7px;
+}
+
+.automation-audit-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
+.automation-audit-item span {
+  align-self: start;
+  padding: 2px 7px;
+  color: #5d4470;
+  background: rgba(239, 226, 255, 0.86);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.automation-audit-item.is-executed span,
+.automation-audit-item.is-approved span {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.90);
+}
+
+.automation-audit-item.is-rejected span,
+.automation-audit-item.is-cancelled span {
+  color: #8a3b2f;
+  background: rgba(255, 225, 218, 0.90);
+}
+
+.automation-audit-item strong,
+.automation-audit-item p,
+.automation-audit-item em {
+  min-width: 0;
+}
+
+.automation-audit-item strong {
+  overflow: hidden;
+  color: #263f34;
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-audit-item p {
+  grid-column: 2;
+  margin: 0;
+  color: rgba(37, 72, 59, 0.70);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.automation-audit-item em {
+  grid-column: 2;
+  color: rgba(37, 72, 59, 0.48);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.automation-ops-empty {
+  margin: 0;
+  color: rgba(37, 72, 59, 0.62);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-automation-status {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  background: rgba(246, 255, 250, 0.82);
+}
+
 .orchestration-progress {
   display: grid;
   gap: 8px;

@@ -27,6 +27,10 @@ let remoteArtifactLibraryLoaded = false;
 let remoteArtifactLibraryLoading = false;
 let remoteTemplatesLoaded = false;
 let remoteTemplatesLoading = false;
+let automationOpsLoaded = false;
+let automationOpsLoading = false;
+let automationConnectorStatus = null;
+let remoteAuditEvents = [];
 let artifactLibraryFilters = {
   query: "",
   employeeId: "all",
@@ -80,6 +84,8 @@ const refs = {
   orchestrationResults: $("#orchestrationResults"),
   orchestrationHistory: $("#orchestrationHistory"),
   refreshOrchestrationHistoryButton: $("#refreshOrchestrationHistoryButton"),
+  automationOps: $("#automationOps"),
+  refreshAutomationOpsButton: $("#refreshAutomationOpsButton"),
   orchestrationDetail: $("#orchestrationDetail"),
   orchestrationDetailContent: $("#orchestrationDetailContent"),
   closeOrchestrationDetailButton: $("#closeOrchestrationDetailButton"),
@@ -540,6 +546,7 @@ function updateAdminButton() {
 function openAdminModal() {
   const loggedIn = isAdminLoggedIn();
   renderAdminModalContent();
+  if (loggedIn) loadAutomationOps({ force: true });
   refs.adminModal.classList.remove("is-hidden");
   refs.adminModalBackdrop.classList.remove("is-hidden");
   refs.adminModal.removeAttribute("aria-hidden");
@@ -582,6 +589,10 @@ function renderAdminModalContent() {
       <strong>관리자 세션 활성화</strong>
       <p>AI 호출, 업무 동기화, 산출물 라이브러리 조회가 가능합니다. 브라우저 세션이 끝나면 토큰은 남지 않습니다.</p>
     </div>
+    <div class="admin-automation-status" id="adminAutomationStatus">
+      <strong>자동화 서버 상태</strong>
+      <p>커넥터와 백그라운드 실행 상태를 확인하는 중입니다.</p>
+    </div>
     <div class="admin-data-zone">
       <strong>저장 데이터 관리</strong>
       <p>서버에 저장된 직원 대화, 업무 보드, 오케스트레이션 실행 기록, 산출물 문서를 초기화합니다. 삭제 후 복구할 수 없습니다.</p>
@@ -589,6 +600,7 @@ function renderAdminModalContent() {
     </div>
     <button class="ghost-button full-width" type="button" data-admin-action="logout">관리자 로그아웃</button>
   `;
+  renderAdminAutomationStatus();
 }
 
 function handleAdminModalSubmit(event) {
@@ -607,6 +619,7 @@ function handleAdminModalSubmit(event) {
   loadRemoteTasksIfNeeded({ force: true });
   loadRemoteArtifactLibrary({ force: true });
   loadRemoteAutomationTemplatesIfNeeded({ force: true });
+  loadAutomationOps({ force: true });
   syncLocalAutomationTemplatesToRemote();
   if (state.selectedEmployeeId && state.detailMode === "chat") loadRemoteChatIfNeeded(state.selectedEmployeeId);
   showToast("관리자 로그인 됐습니다. AI 기능이 활성화됩니다.");
@@ -623,6 +636,7 @@ function handleAdminModalClick(event) {
     resetRemoteTaskCache();
     resetRemoteArtifactLibraryCache();
     resetRemoteTemplateCache();
+    resetAutomationOpsCache();
     closeAdminModal();
     updateAdminButton();
     showToast("관리자 로그아웃 됐습니다.");
@@ -683,6 +697,7 @@ function resetAutomationLocalCache() {
   resetRemoteTaskCache();
   resetRemoteArtifactLibraryCache();
   resetRemoteTemplateCache();
+  resetAutomationOpsCache();
   saveState();
 }
 
@@ -965,6 +980,7 @@ function bindEvents() {
   refs.refreshOrchestrationHistoryButton?.addEventListener("click", loadOrchestrationHistory);
   refs.orchestrationHistory?.addEventListener("click", handleOrchestrationHistoryClick);
   refs.orchestrationHistory?.addEventListener("keydown", handleOrchestrationHistoryKeydown);
+  refs.refreshAutomationOpsButton?.addEventListener("click", () => loadAutomationOps({ force: true }));
   refs.closeOrchestrationDetailButton.addEventListener("click", closeOrchestrationDetail);
 
 }
@@ -1040,6 +1056,8 @@ function openOrchestrationPanel() {
   refs.orchestrationPanel.setAttribute("aria-hidden", "false");
   renderStoredOrchestrationPanel();
   loadOrchestrationHistory();
+  renderAutomationOps();
+  loadAutomationOps({ force: true });
   loadRemoteArtifactLibrary();
   loadRemoteAutomationTemplatesIfNeeded({ force: true });
   refs.orchestrationGoal.focus();
@@ -1290,6 +1308,225 @@ function renderOrchestrationHistory(runs) {
   `;
   refs.refreshOrchestrationHistoryButton = $("#refreshOrchestrationHistoryButton");
   refs.refreshOrchestrationHistoryButton?.addEventListener("click", loadOrchestrationHistory);
+}
+
+async function loadAutomationOps({ force = false } = {}) {
+  if (!refs.automationOps && !document.querySelector("#adminAutomationStatus")) return;
+  if (!automationStore?.getConnectors || !automationStore?.listAuditEvents) {
+    renderAutomationOpsMessage("자동화 운영 API를 불러오지 못했습니다.");
+    renderAdminAutomationStatus();
+    return;
+  }
+  if (!isAdminLoggedIn()) {
+    renderAutomationOpsMessage("관리자 로그인 후 커넥터 상태와 최근 감사 로그를 확인할 수 있습니다.");
+    renderAdminAutomationStatus();
+    return;
+  }
+  if (automationOpsLoading) return;
+  if (automationOpsLoaded && !force) {
+    renderAutomationOps();
+    renderAdminAutomationStatus();
+    return;
+  }
+
+  automationOpsLoading = true;
+  renderAutomationOpsMessage("자동화 운영 상태를 불러오는 중입니다...");
+  renderAdminAutomationStatus("자동화 서버 상태를 확인하는 중입니다.");
+  try {
+    const [connectorData, auditData] = await Promise.all([
+      automationStore.getConnectors(),
+      automationStore.listAuditEvents({ limit: 8 }),
+    ]);
+    automationConnectorStatus = connectorData ?? null;
+    remoteAuditEvents = Array.isArray(auditData?.events) ? auditData.events : [];
+    automationOpsLoaded = true;
+    renderAutomationOps();
+    renderAdminAutomationStatus();
+  } catch (error) {
+    const message = error?.message === "unauthorized"
+      ? "관리자 로그인이 필요합니다."
+      : automationStore.isStorageMissing?.(error)
+        ? "서버 저장소가 아직 연결되지 않았습니다."
+        : "자동화 운영 상태를 불러오지 못했습니다.";
+    renderAutomationOpsMessage(message);
+    renderAdminAutomationStatus(message);
+  } finally {
+    automationOpsLoading = false;
+  }
+}
+
+function renderAutomationOpsMessage(message) {
+  if (!refs.automationOps) return;
+  refs.automationOps.innerHTML = `
+    <div class="automation-ops-head">
+      <strong>자동화 운영 상태</strong>
+      <button type="button" id="refreshAutomationOpsButton">새로고침</button>
+    </div>
+    <p class="automation-ops-empty">${escapeHtml(message)}</p>
+  `;
+  bindAutomationOpsRefreshButton();
+}
+
+function renderAutomationOps() {
+  if (!refs.automationOps) return;
+  if (!isAdminLoggedIn()) {
+    renderAutomationOpsMessage("관리자 로그인 후 커넥터 상태와 최근 감사 로그를 확인할 수 있습니다.");
+    return;
+  }
+  if (!automationConnectorStatus) {
+    renderAutomationOpsMessage(automationOpsLoading ? "자동화 운영 상태를 불러오는 중입니다..." : "자동화 운영 상태를 아직 불러오지 않았습니다.");
+    return;
+  }
+
+  const tools = automationConnectorStatus.tools ?? {};
+  const background = automationConnectorStatus.background ?? {};
+  const policy = automationConnectorStatus.policy ?? {};
+  const connectorRows = ["calendar", "mail", "drive", "notion"]
+    .map((key) => renderAutomationConnectorCard(key, tools[key] ?? {}))
+    .join("");
+  const auditRows = renderAutomationAuditRows(remoteAuditEvents);
+
+  refs.automationOps.innerHTML = `
+    <div class="automation-ops-head">
+      <strong>자동화 운영 상태</strong>
+      <button type="button" id="refreshAutomationOpsButton">새로고침</button>
+    </div>
+    <div class="automation-connector-grid">
+      ${connectorRows}
+    </div>
+    <div class="automation-background-card">
+      <span>백그라운드 실행</span>
+      <strong>${background.queueConfigured ? "Queue 연결됨" : "브라우저 중심 실행"}</strong>
+      <p>${escapeHtml(background.note || "외부 실행 전 승인과 감사 로그를 우선 사용합니다.")}</p>
+      <div>
+        <em class="${background.queueConfigured ? "is-on" : "is-off"}">Queue ${background.queueConfigured ? "ON" : "OFF"}</em>
+        <em class="${background.cronConfigured ? "is-on" : "is-off"}">Cron ${background.cronConfigured ? "ON" : "OFF"}</em>
+        <em class="${background.writeEnabled ? "is-on" : "is-off"}">쓰기 ${background.writeEnabled ? "허용" : "차단"}</em>
+      </div>
+    </div>
+    <div class="automation-policy-note">
+      <strong>운영 정책</strong>
+      <span>${policy.requiresOperatorApproval === false ? "자동 실행 허용" : "실행 전 승인 필요"}</span>
+      <p>${escapeHtml(policy.note || "외부 도구 쓰기는 명시 승인 후 단계적으로 열어갑니다.")}</p>
+    </div>
+    <div class="automation-audit-head">
+      <strong>최근 감사 로그</strong>
+      <span>${remoteAuditEvents.length ? `${remoteAuditEvents.length}건` : "기록 없음"}</span>
+    </div>
+    ${auditRows || "<p class=\"automation-ops-empty\">아직 저장된 자동화 감사 로그가 없습니다.</p>"}
+  `;
+  bindAutomationOpsRefreshButton();
+}
+
+function renderAutomationConnectorCard(key, status = {}) {
+  const connected = Boolean(status.connected);
+  const writable = Boolean(status.writeEnabled);
+  const tone = writable ? "is-on" : connected ? "is-ready" : "is-off";
+  const label = getAutomationConnectorLabel(key);
+  const statusText = writable ? "쓰기 가능" : connected ? "인증 정보 있음" : "미연결";
+  const required = Array.isArray(status.requiredSecrets) ? status.requiredSecrets.length : 0;
+  return `
+    <article class="automation-connector-card ${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(statusText)}</strong>
+      <em>${writable ? "외부 실행 가능" : connected ? "승인 모드" : `${required || 1}개 설정 필요`}</em>
+    </article>
+  `;
+}
+
+function renderAutomationAuditRows(events = []) {
+  if (!Array.isArray(events) || !events.length) return "";
+  return `
+    <div class="automation-audit-list">
+      ${events.map((event) => {
+        const metadata = safeParseJson(event.metadata_json);
+        const status = normalizeToolActionStatus(event.status, "pending");
+        const meta = [
+          getAutomationAuditEventLabel(event.event_type),
+          metadata.phase,
+          formatRemoteDate(event.created_at),
+        ].filter(Boolean).join(" · ");
+        return `
+          <article class="automation-audit-item is-${escapeHtml(status)}">
+            <span>${escapeHtml(getToolActionStatusLabel(status))}</span>
+            <strong>${escapeHtml(event.title || "자동화 이벤트")}</strong>
+            <p>${escapeHtml(event.message || meta || "세부 기록 없음")}</p>
+            <em>${escapeHtml(meta)}</em>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderAdminAutomationStatus(message = "") {
+  const target = document.querySelector("#adminAutomationStatus");
+  if (!target) return;
+  if (message) {
+    target.innerHTML = `
+      <strong>자동화 서버 상태</strong>
+      <p>${escapeHtml(message)}</p>
+    `;
+    return;
+  }
+  if (!isAdminLoggedIn()) {
+    target.innerHTML = `
+      <strong>자동화 서버 상태</strong>
+      <p>관리자 로그인 후 확인할 수 있습니다.</p>
+    `;
+    return;
+  }
+  if (!automationConnectorStatus) {
+    target.innerHTML = `
+      <strong>자동화 서버 상태</strong>
+      <p>${automationOpsLoading ? "커넥터와 감사 로그를 확인하는 중입니다." : "오케스트레이션 패널에서 운영 상태를 새로고침하세요."}</p>
+    `;
+    return;
+  }
+
+  const tools = automationConnectorStatus.tools ?? {};
+  const statuses = Object.values(tools);
+  const connectedCount = statuses.filter((item) => item?.connected).length;
+  const writableCount = statuses.filter((item) => item?.writeEnabled).length;
+  const background = automationConnectorStatus.background ?? {};
+  target.innerHTML = `
+    <strong>자동화 서버 상태</strong>
+    <div class="admin-status-pills">
+      <span>${connectedCount}/${statuses.length || 4} 커넥터 준비</span>
+      <span>${writableCount}개 쓰기 허용</span>
+      <span>Queue ${background.queueConfigured ? "ON" : "OFF"}</span>
+      <span>감사 로그 ${remoteAuditEvents.length}건</span>
+    </div>
+    <p>${escapeHtml(background.writeEnabled ? "외부 도구 실행이 허용된 상태입니다." : "현재는 승인/감사 로그 중심의 안전 모드입니다.")}</p>
+  `;
+}
+
+function bindAutomationOpsRefreshButton() {
+  refs.refreshAutomationOpsButton = $("#refreshAutomationOpsButton");
+  refs.refreshAutomationOpsButton?.addEventListener("click", () => loadAutomationOps({ force: true }));
+}
+
+function getAutomationConnectorLabel(key) {
+  const labels = {
+    calendar: "Calendar",
+    mail: "Mail",
+    drive: "Drive",
+    notion: "Notion",
+  };
+  return labels[key] ?? key;
+}
+
+function getAutomationAuditEventLabel(type) {
+  const labels = {
+    created: "생성",
+    updated: "업데이트",
+    approved: "승인",
+    rejected: "보류",
+    executed: "실행",
+    dry_run: "리허설",
+    automation_event: "자동화",
+  };
+  return labels[type] ?? type ?? "";
 }
 
 function handleOrchestrationHistoryClick(event) {
@@ -3944,6 +4181,15 @@ function resetRemoteArtifactLibraryCache() {
 function resetRemoteTemplateCache() {
   remoteTemplatesLoaded = false;
   remoteTemplatesLoading = false;
+}
+
+function resetAutomationOpsCache() {
+  automationOpsLoaded = false;
+  automationOpsLoading = false;
+  automationConnectorStatus = null;
+  remoteAuditEvents = [];
+  renderAutomationOps();
+  renderAdminAutomationStatus();
 }
 
 function scrollAppToTop() {

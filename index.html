@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:wght@500;600&display=swap" />
     <link rel="stylesheet" href="./src/styles.css?v=116" />
     <link rel="stylesheet" href="./src/styles-v2.css?v=112" />
-    <link rel="stylesheet" href="./src/styles-building.css?v=123" />
+    <link rel="stylesheet" href="./src/styles-building.css?v=124" />
     <link rel="stylesheet" href="./src/theme.css?v=109" />
   </head>
   <body>
@@ -242,6 +242,14 @@
         <p class="orch-history-empty">관리자 로그인 후 저장된 실행 기록을 불러올 수 있습니다.</p>
       </section>
 
+      <section class="automation-ops" id="automationOps" aria-live="polite">
+        <div class="automation-ops-head">
+          <strong>자동화 운영 상태</strong>
+          <button type="button" id="refreshAutomationOpsButton">새로고침</button>
+        </div>
+        <p class="automation-ops-empty">관리자 로그인 후 커넥터 상태와 최근 감사 로그를 확인할 수 있습니다.</p>
+      </section>
+
       <div class="orchestration-progress" id="orchestrationProgress" aria-live="polite">
         목표를 입력하면 매니저가 필요한 직원을 선정하고, 각 직원의 결과를 취합합니다.
       </div>
@@ -283,6 +291,6 @@
     <script src="./src/services/ai-adapter.js?v=116"></script>
     <script src="./src/services/automation-store.js?v=119"></script>
     <script src="./src/services/tool-adapters.js?v=1"></script>
-    <script src="./src/app.js?v=137"></script>
+    <script src="./src/app.js?v=138"></script>
   </body>
 </html>
