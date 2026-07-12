@@ -31,6 +31,7 @@ let automationOpsLoaded = false;
 let automationOpsLoading = false;
 let automationConnectorStatus = null;
 let remoteAuditEvents = [];
+let automationOpsRefreshTimer = 0;
 let artifactLibraryFilters = {
   query: "",
   employeeId: "all",
@@ -385,6 +386,8 @@ function getDefaultAutomationPolicy() {
     requireContactReview: true,
     allowAutoRegisterTasks: false,
     allowBackgroundQueue: false,
+    connectors: {},
+    connectorSource: "local",
   };
 }
 
@@ -399,7 +402,21 @@ function normalizeAutomationPolicy(policy = {}) {
     requireContactReview: policy.requireContactReview !== false,
     allowAutoRegisterTasks: Boolean(policy.allowAutoRegisterTasks),
     allowBackgroundQueue: Boolean(policy.allowBackgroundQueue),
+    connectors: normalizeAutomationConnectors(policy.connectors),
+    connectorSource: typeof policy.connectorSource === "string" ? policy.connectorSource.slice(0, 40) : base.connectorSource,
   };
+}
+
+function normalizeAutomationConnectors(connectors = {}) {
+  if (!connectors || typeof connectors !== "object" || Array.isArray(connectors)) return {};
+  return Object.fromEntries(Object.entries(connectors).map(([key, value]) => {
+    const item = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    return [key, {
+      connected: Boolean(item.connected),
+      writeEnabled: Boolean(item.writeEnabled),
+      requiredSecrets: Array.isArray(item.requiredSecrets) ? item.requiredSecrets.slice(0, 8) : [],
+    }];
+  }));
 }
 
 function hydrateOrch(savedOrch = {}) {
@@ -1339,6 +1356,7 @@ async function loadAutomationOps({ force = false } = {}) {
     ]);
     automationConnectorStatus = connectorData ?? null;
     remoteAuditEvents = Array.isArray(auditData?.events) ? auditData.events : [];
+    syncAutomationPolicyFromConnectorStatus(automationConnectorStatus);
     automationOpsLoaded = true;
     renderAutomationOps();
     renderAdminAutomationStatus();
@@ -1365,6 +1383,33 @@ function renderAutomationOpsMessage(message) {
     <p class="automation-ops-empty">${escapeHtml(message)}</p>
   `;
   bindAutomationOpsRefreshButton();
+}
+
+function syncAutomationPolicyFromConnectorStatus(connectorData = {}) {
+  const tools = normalizeAutomationConnectors(connectorData?.tools);
+  const background = connectorData?.background && typeof connectorData.background === "object"
+    ? connectorData.background
+    : {};
+  const serverPolicy = connectorData?.policy && typeof connectorData.policy === "object"
+    ? connectorData.policy
+    : {};
+  const connectorValues = Object.values(tools);
+  const writeEnabledAny = connectorValues.some((item) => item.writeEnabled);
+  const queueReady = Boolean(background.queueConfigured && background.writeEnabled);
+  const nextPolicy = normalizeAutomationPolicy({
+    ...state.automationPolicy,
+    externalExecution: Boolean(serverPolicy.externalExecutionDefault && writeEnabledAny),
+    connectorReady: writeEnabledAny,
+    allowBackgroundQueue: queueReady,
+    connectors: tools,
+    connectorSource: "server",
+  });
+  const previous = JSON.stringify(normalizeAutomationPolicy(state.automationPolicy));
+  const next = JSON.stringify(nextPolicy);
+  if (previous === next) return false;
+  state.automationPolicy = nextPolicy;
+  saveState();
+  return true;
 }
 
 function renderAutomationOps() {
@@ -1432,6 +1477,14 @@ function renderAutomationConnectorCard(key, status = {}) {
       <em>${writable ? "외부 실행 가능" : connected ? "승인 모드" : `${required || 1}개 설정 필요`}</em>
     </article>
   `;
+}
+
+function scheduleAutomationOpsRefresh() {
+  if (!automationStore?.listAuditEvents || !isAdminLoggedIn()) return;
+  window.clearTimeout(automationOpsRefreshTimer);
+  automationOpsRefreshTimer = window.setTimeout(() => {
+    loadAutomationOps({ force: true });
+  }, 700);
 }
 
 function renderAutomationAuditRows(events = []) {
@@ -2270,10 +2323,12 @@ function updateRemoteToolAction(action) {
     metadata: {
       ...(action.metadata ?? {}),
       safeMode: true,
-      externalExecution: false,
+      externalExecution: Boolean(action.metadata?.externalExecution),
       clientUpdatedAt: new Date().toISOString(),
     },
-  }).catch(handleRemoteToolActionSyncError);
+  })
+    .then(scheduleAutomationOpsRefresh)
+    .catch(handleRemoteToolActionSyncError);
 }
 
 function handleRemoteToolActionSyncError(error) {
@@ -2389,7 +2444,9 @@ function syncRemoteAuditEvent(action = {}, eventType = "updated", log = {}) {
       externalExecution: Boolean(action.metadata?.externalExecution),
       safeMode: action.metadata?.safeMode !== false,
     },
-  }).catch(handleRemoteAuditSyncError);
+  })
+    .then(scheduleAutomationOpsRefresh)
+    .catch(handleRemoteAuditSyncError);
 }
 
 function handleRemoteTemplateSyncError(error) {
@@ -3549,6 +3606,7 @@ function renderToolActions(actions = []) {
 
 function renderAutomationPolicySummary() {
   const policy = normalizeAutomationPolicy(state.automationPolicy);
+  const connectorCount = Object.values(policy.connectors ?? {}).filter((item) => item.writeEnabled).length;
   const modeLabel = {
     "draft-only": "초안만",
     "approval-required": "승인 필요",
@@ -3560,6 +3618,7 @@ function renderAutomationPolicySummary() {
       <em class="${policy.externalExecution ? "is-on" : "is-off"}">외부 실행 ${policy.externalExecution ? "ON" : "OFF"}</em>
       <em class="${policy.connectorReady ? "is-on" : "is-off"}">커넥터 ${policy.connectorReady ? "연결" : "미연결"}</em>
       <em class="${policy.allowBackgroundQueue ? "is-on" : "is-off"}">백그라운드 ${policy.allowBackgroundQueue ? "ON" : "OFF"}</em>
+      <em class="${policy.connectorSource === "server" ? "is-on" : "is-off"}">${policy.connectorSource === "server" ? `서버 동기화 · ${connectorCount}개 쓰기` : "로컬 기본 정책"}</em>
     </div>
   `;
 }
@@ -4184,6 +4243,8 @@ function resetRemoteTemplateCache() {
 }
 
 function resetAutomationOpsCache() {
+  window.clearTimeout(automationOpsRefreshTimer);
+  automationOpsRefreshTimer = 0;
   automationOpsLoaded = false;
   automationOpsLoading = false;
   automationConnectorStatus = null;

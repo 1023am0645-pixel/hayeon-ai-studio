@@ -23,6 +23,16 @@ const defaultPolicy = {
   connectorReady: false,
   requireContactReview: true,
   allowAutoRegisterTasks: false,
+  connectors: {},
+};
+
+const requiredConnectorByActionType = {
+  calendar_event: "calendar",
+  email_draft: "mail",
+  file_folder: "drive",
+  document_draft: "drive",
+  checklist: "",
+  automation_recipe: "",
 };
 
 function getActionTypeLabel(type) {
@@ -37,6 +47,42 @@ function normalizePolicy(policy = {}) {
   return {
     ...defaultPolicy,
     ...(policy && typeof policy === "object" ? policy : {}),
+    connectors: normalizeConnectors(policy?.connectors),
+  };
+}
+
+function normalizeConnectors(connectors = {}) {
+  if (!connectors || typeof connectors !== "object" || Array.isArray(connectors)) return {};
+  return Object.fromEntries(Object.entries(connectors).map(([key, value]) => {
+    const item = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    return [key, {
+      connected: Boolean(item.connected),
+      writeEnabled: Boolean(item.writeEnabled),
+      requiredSecrets: Array.isArray(item.requiredSecrets) ? item.requiredSecrets.slice(0, 8) : [],
+    }];
+  }));
+}
+
+function getRequiredConnector(actionType) {
+  return requiredConnectorByActionType[actionType] ?? "";
+}
+
+function resolveConnectorPolicy(policy, actionType) {
+  const requiredConnector = getRequiredConnector(actionType);
+  if (!requiredConnector) {
+    return {
+      requiredConnector,
+      connectorReady: Boolean(policy.connectorReady),
+      connectorConnected: Boolean(policy.connectorReady),
+      writeEnabled: Boolean(policy.connectorReady),
+    };
+  }
+  const connector = policy.connectors?.[requiredConnector] ?? {};
+  return {
+    requiredConnector,
+    connectorReady: Boolean(connector.writeEnabled),
+    connectorConnected: Boolean(connector.connected),
+    writeEnabled: Boolean(connector.writeEnabled),
   };
 }
 
@@ -182,6 +228,7 @@ function buildAutomationRecipePackage(base) {
 function buildExecutionPackage(action = {}, options = {}) {
   const policy = normalizePolicy(options.policy);
   const base = makeBase(action, policy);
+  const connectorPolicy = resolveConnectorPolicy(policy, base.actionType);
   const builders = {
     calendar_event: buildCalendarPackage,
     document_draft: buildDocumentPackage,
@@ -198,17 +245,22 @@ function buildExecutionPackage(action = {}, options = {}) {
     typeLabel: getActionTypeLabel(base.actionType),
     adapter: getAdapterLabel(base.actionType),
     title: base.sourceTitle,
-    status: policy.externalExecution && policy.connectorReady ? "ready" : "blocked",
-    externalExecution: Boolean(policy.externalExecution && policy.connectorReady),
-    connectorReady: Boolean(policy.connectorReady),
+    status: policy.externalExecution && connectorPolicy.connectorReady ? "ready" : "blocked",
+    externalExecution: Boolean(policy.externalExecution && connectorPolicy.connectorReady),
+    connectorReady: Boolean(connectorPolicy.connectorReady),
+    connectorConnected: Boolean(connectorPolicy.connectorConnected),
+    requiredConnector: connectorPolicy.requiredConnector,
     blocker: policy.externalExecution
-      ? (policy.connectorReady ? "" : "external_connector_missing")
+      ? (connectorPolicy.connectorReady ? "" : "external_connector_missing")
       : "external_execution_disabled",
     summary: `${getActionTypeLabel(base.actionType)} 실행 전 패키지`,
     warnings: [
       "현재 기본 정책은 외부 서비스 자동 실행을 차단합니다.",
+      connectorPolicy.requiredConnector && !connectorPolicy.connectorReady
+        ? `${getAdapterLabel(base.actionType)} 쓰기 커넥터가 아직 준비되지 않았습니다.`
+        : "",
       "실제 실행 전 수신자, 날짜, 공유 권한, 개인정보를 운영자가 확인해야 합니다.",
-    ],
+    ].filter(Boolean),
     ...specific,
   };
 }
@@ -262,13 +314,18 @@ function execute(action = {}, options = {}) {
       package: pkg,
     };
   }
-  if (!policy.connectorReady) {
+  const connectorPolicy = resolveConnectorPolicy(policy, action.actionType || action.action_type || "document_draft");
+  if (!connectorPolicy.connectorReady) {
     return {
       ok: false,
       status: "blocked",
-      code: "external_connector_missing",
+      code: connectorPolicy.requiredConnector
+        ? `${connectorPolicy.requiredConnector}_connector_missing`
+        : "external_connector_missing",
       externalExecution: false,
-      message: "외부 계정/OAuth 커넥터가 아직 연결되지 않아 실제 실행을 막았습니다.",
+      message: connectorPolicy.connectorConnected
+        ? "외부 계정은 감지됐지만 쓰기 권한이 아직 비활성화되어 실제 실행을 막았습니다."
+        : "외부 계정/OAuth 커넥터가 아직 연결되지 않아 실제 실행을 막았습니다.",
       package: pkg,
     };
   }
