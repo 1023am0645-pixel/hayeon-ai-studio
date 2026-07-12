@@ -118,6 +118,11 @@ async function handleAutomationRoute(request, env, url) {
       }
     }
 
+    const toolActionCommandMatch = url.pathname.match(/^\/api\/automation\/tool-actions\/([^/]+)\/(dry-run|execute)$/);
+    if (toolActionCommandMatch && request.method === "POST") {
+      return runToolActionCommand(env.AGENT_DB, toolActionCommandMatch[1], toolActionCommandMatch[2], env, context.requestId);
+    }
+
     const toolActionMatch = url.pathname.match(/^\/api\/automation\/tool-actions\/([^/]+)$/);
     if (toolActionMatch && request.method === "PATCH") {
       const body = await parseJsonBody(request, context.requestId);
@@ -573,6 +578,330 @@ async function updateToolAction(db, actionId, body, requestId) {
     },
     requestId,
   });
+}
+
+async function runToolActionCommand(db, actionId, command, env, requestId) {
+  let decodedId = "";
+  try {
+    decodedId = decodeURIComponent(String(actionId ?? ""));
+  } catch {
+    return agentError("bad_tool_action_id", 400, requestId);
+  }
+  const id = normalizeId(decodedId, 180);
+  if (!id) return agentError("bad_tool_action_id", 400, requestId);
+
+  const current = await db.prepare("SELECT * FROM tool_actions WHERE id = ?").bind(id).first();
+  if (!current) return agentError("tool_action_not_found", 404, requestId);
+  if (command === "execute" && current.status !== "approved") {
+    return agentError("tool_action_not_approved", 409, requestId, "Only approved tool actions can be execution-checked.");
+  }
+
+  await ensureAutomationTemplateAuditTables(db);
+  const now = new Date().toISOString();
+  const metadata = safeJsonParse(current.metadata_json);
+  const action = normalizeStoredToolAction(current);
+  const policy = getServerToolExecutionPolicy(env);
+  const pkg = buildServerToolExecutionPackage(action, policy);
+
+  let status = current.status;
+  let approvalNote = current.approval_note ?? "";
+  let executedAt = current.executed_at ?? null;
+  let auditEventType = command === "dry-run" ? "dry_run" : "execute_blocked";
+  let auditMessage = "서버 안전 모드 리허설 완료 · 외부 전송 없음";
+  const nextMetadata = { ...metadata, safeMode: true };
+
+  if (command === "dry-run") {
+    nextMetadata.dryRun = {
+      at: now,
+      adapter: "worker-tool-adapter-v1",
+      externalExecution: false,
+      package: pkg,
+      outputText: formatServerPackageOutput(pkg).slice(0, 1800),
+      warnings: pkg.warnings ?? [],
+    };
+    nextMetadata.externalExecution = false;
+  } else {
+    const result = getServerExecutionResult(pkg, policy);
+    nextMetadata.executionAttempt = {
+      at: now,
+      ok: result.ok,
+      status: result.status,
+      code: result.code,
+      message: result.message,
+      externalExecution: result.externalExecution,
+      package: pkg,
+    };
+    nextMetadata.externalExecution = result.externalExecution;
+    approvalNote = result.message;
+    auditEventType = result.ok ? "execute_done" : "execute_blocked";
+    auditMessage = result.message;
+    if (result.ok) {
+      status = "executed";
+      executedAt = now;
+    }
+  }
+
+  await db.prepare(`
+    UPDATE tool_actions
+    SET status = ?, approval_note = ?, metadata_json = ?, updated_at = ?, executed_at = ?
+    WHERE id = ?
+  `).bind(status, approvalNote, stringifyMetadata(nextMetadata), now, executedAt, id).run();
+
+  const auditId = `audit-${crypto.randomUUID()}`;
+  await db.prepare(`
+    INSERT INTO automation_audit_events (
+      id, event_type, source_run_id, source_action_id, task_id, title, status,
+      message, metadata_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    auditId,
+    auditEventType,
+    current.source_run_id ?? null,
+    id,
+    current.source_task_id ?? null,
+    current.title ?? "",
+    status,
+    auditMessage,
+    stringifyMetadata({
+      command,
+      adapter: "worker-tool-adapter-v1",
+      safeMode: true,
+      externalExecution: Boolean(nextMetadata.externalExecution),
+      requiredConnector: pkg.requiredConnector ?? "",
+      blocker: pkg.blocker ?? "",
+    }),
+    now,
+  ).run();
+
+  return json({
+    ok: true,
+    text: "",
+    data: {
+      toolAction: {
+        id,
+        status,
+        approvalNote,
+        metadata: nextMetadata,
+        updatedAt: now,
+        executedAt,
+      },
+      dryRun: nextMetadata.dryRun ?? null,
+      executionAttempt: nextMetadata.executionAttempt ?? null,
+      auditEvent: { id: auditId, eventType: auditEventType, createdAt: now },
+    },
+    requestId,
+  });
+}
+
+function normalizeStoredToolAction(row = {}) {
+  return {
+    id: row.id ?? "",
+    sourceRunId: row.source_run_id ?? "",
+    sourceTaskId: row.source_task_id ?? "",
+    sourceArtifactId: row.source_artifact_id ?? "",
+    actionType: normalizeToolActionType(row.action_type),
+    title: row.title ?? "",
+    description: row.description ?? "",
+    status: normalizeToolActionStatus(row.status),
+    payload: safeJsonParse(row.payload_json),
+    metadata: safeJsonParse(row.metadata_json),
+  };
+}
+
+function getServerToolExecutionPolicy(env) {
+  const tools = getExternalToolStatus(env);
+  const toolValues = Object.values(tools);
+  return {
+    externalExecution: false,
+    connectorReady: toolValues.some((item) => item.writeEnabled),
+    connectors: tools,
+    background: getBackgroundExecutionStatus(env),
+  };
+}
+
+function buildServerToolExecutionPackage(action = {}, policy = {}) {
+  const actionType = normalizeToolActionType(action.actionType);
+  const requiredConnector = getRequiredToolConnector(actionType);
+  const connector = requiredConnector ? (policy.connectors?.[requiredConnector] ?? {}) : {};
+  const connectorReady = requiredConnector
+    ? Boolean(connector.writeEnabled)
+    : Boolean(policy.connectorReady);
+  const externalExecution = Boolean(policy.externalExecution && connectorReady);
+  const sourceTitle = action.payload?.subtask || action.title || "자동화 후보";
+  const previewLines = extractPackagePreviewLines(action.payload?.contentPreview || action.description, 6);
+  const targetApp = getToolActionTargetApp(actionType);
+  const blocker = policy.externalExecution
+    ? (connectorReady ? "" : "external_connector_missing")
+    : "external_execution_disabled";
+
+  return {
+    id: `pkg-${action.id || crypto.randomUUID()}`,
+    actionId: action.id ?? "",
+    actionType,
+    targetApp,
+    title: sourceTitle,
+    status: externalExecution ? "ready" : "blocked",
+    externalExecution,
+    connectorReady,
+    connectorConnected: requiredConnector ? Boolean(connector.connected) : Boolean(policy.connectorReady),
+    requiredConnector,
+    blocker,
+    summary: `${getToolActionTypeLabel(actionType)} 실행 전 패키지`,
+    payloadPreview: buildServerPayloadPreview(actionType, sourceTitle, previewLines, action.payload),
+    steps: getServerToolSteps(actionType),
+    checks: getServerToolChecks(actionType),
+    warnings: [
+      "서버 안전 모드는 외부 서비스 자동 실행을 기본 차단합니다.",
+      requiredConnector && !connectorReady ? `${targetApp} 쓰기 커넥터가 준비되지 않았습니다.` : "",
+      "실제 실행 전 수신자, 날짜, 공유 권한, 개인정보를 운영자가 확인해야 합니다.",
+    ].filter(Boolean),
+  };
+}
+
+function getServerExecutionResult(pkg = {}, policy = {}) {
+  if (!policy.externalExecution) {
+    return {
+      ok: false,
+      status: "blocked",
+      code: "external_execution_disabled",
+      externalExecution: false,
+      message: "서버 운영 정책상 외부 서비스 자동 실행이 꺼져 있어 실행 패키지만 저장했습니다.",
+    };
+  }
+  if (!pkg.connectorReady) {
+    return {
+      ok: false,
+      status: "blocked",
+      code: pkg.requiredConnector ? `${pkg.requiredConnector}_connector_missing` : "external_connector_missing",
+      externalExecution: false,
+      message: pkg.connectorConnected
+        ? "외부 계정은 감지됐지만 쓰기 권한이 비활성화되어 실제 실행을 막았습니다."
+        : "외부 계정/OAuth 커넥터가 아직 연결되지 않아 실제 실행을 막았습니다.",
+    };
+  }
+  return {
+    ok: false,
+    status: "blocked",
+    code: "adapter_not_implemented",
+    externalExecution: false,
+    message: "실제 외부 실행 어댑터는 아직 Worker에 연결되지 않았습니다.",
+  };
+}
+
+function getRequiredToolConnector(actionType) {
+  return {
+    calendar_event: "calendar",
+    email_draft: "mail",
+    file_folder: "drive",
+    document_draft: "drive",
+    checklist: "",
+    automation_recipe: "",
+  }[actionType] ?? "";
+}
+
+function getToolActionTargetApp(actionType) {
+  return {
+    calendar_event: "Calendar",
+    document_draft: "Document",
+    email_draft: "Mail Draft",
+    checklist: "Task Board",
+    file_folder: "Drive",
+    automation_recipe: "Automation Recipe",
+  }[actionType] ?? "Document";
+}
+
+function getToolActionTypeLabel(actionType) {
+  return {
+    calendar_event: "일정 초안",
+    document_draft: "문서 초안",
+    email_draft: "메일 초안",
+    checklist: "체크리스트",
+    file_folder: "파일 정리",
+    automation_recipe: "자동화 레시피",
+  }[actionType] ?? "문서 초안";
+}
+
+function extractPackagePreviewLines(text = "", limit = 6) {
+  return String(text || "")
+    .replace(/\r/g, "")
+    .split(/\n|(?:^|\s)[-*]\s+/)
+    .map((line) => line
+      .replace(/^#+\s*/, "")
+      .replace(/\*\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function buildServerPayloadPreview(actionType, sourceTitle, previewLines, payload = {}) {
+  const lines = previewLines.length ? previewLines : ["원문 산출물을 기준으로 실행 직전 초안을 구성합니다."];
+  if (actionType === "calendar_event") {
+    return { title: sourceTitle, durationMinutes: 60, attendees: "확인 필요", description: lines.join("\n") };
+  }
+  if (actionType === "email_draft") {
+    return { subject: sourceTitle, recipients: "확인 필요", body: lines.join("\n") };
+  }
+  if (actionType === "checklist") {
+    return { title: sourceTitle, items: lines.map((line) => ({ label: line, done: false })) };
+  }
+  if (actionType === "file_folder") {
+    return { folderName: sourceTitle, suggestedFiles: lines.slice(0, 4) };
+  }
+  if (actionType === "automation_recipe") {
+    return { name: sourceTitle, trigger: "운영자 승인 또는 수동 시작", flow: lines };
+  }
+  return { title: sourceTitle, sections: lines, owner: payload.employeeName || "담당 직원" };
+}
+
+function getServerToolSteps(actionType) {
+  const common = {
+    calendar_event: ["일정 제목과 목적을 확인한다.", "실제 날짜, 시간, 참석자를 운영자가 입력한다.", "저장 전 알림과 공개 범위를 확인한다."],
+    document_draft: ["문서 제목과 저장 위치를 확정한다.", "산출물 미리보기를 문서 섹션으로 옮긴다.", "공유 권한을 확인한 뒤 배포한다."],
+    email_draft: ["메일 제목과 핵심 문장을 확인한다.", "수신자와 참조자를 운영자가 직접 입력한다.", "발송 전 개인정보와 외부 공개 범위를 점검한다."],
+    checklist: ["미리보기 내용을 체크 항목으로 변환한다.", "완료 기준과 담당자를 확인한다.", "할 일판 또는 업무 템플릿에 등록한다."],
+    file_folder: ["폴더명과 저장 위치를 정한다.", "관련 산출물을 한 폴더로 모은다.", "파일명 규칙과 공유 권한을 확인한다."],
+    automation_recipe: ["시작 조건과 입력값을 확정한다.", "처리 단계와 예외 상황을 정리한다.", "반복 실행 전 샘플 데이터로 리허설한다."],
+  };
+  return common[actionType] ?? common.document_draft;
+}
+
+function getServerToolChecks(actionType) {
+  const common = {
+    calendar_event: ["날짜/시간", "참석자", "공개 범위", "알림"],
+    document_draft: ["문서 제목", "저장 위치", "공유 권한", "확인 필요 항목"],
+    email_draft: ["수신자", "첨부", "개인정보", "발송 시점"],
+    checklist: ["완료 기준", "담당자", "우선순위"],
+    file_folder: ["저장 위치", "파일명 규칙", "공유 권한"],
+    automation_recipe: ["입력값", "예외 처리", "출력물", "검수 기준"],
+  };
+  return common[actionType] ?? common.document_draft;
+}
+
+function formatServerPackageOutput(pkg = {}) {
+  const preview = pkg.payloadPreview && typeof pkg.payloadPreview === "object"
+    ? Object.entries(pkg.payloadPreview)
+      .map(([key, value]) => {
+        const rendered = Array.isArray(value)
+          ? value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join("\n")
+          : String(value ?? "");
+        return `${key}: ${rendered}`;
+      })
+      .join("\n")
+    : "미리보기 없음";
+  return [
+    pkg.summary || "실행 패키지",
+    `대상 도구: ${pkg.targetApp || "Tool"}`,
+    `외부 실행: ${pkg.externalExecution ? "허용" : "차단"}`,
+    pkg.requiredConnector ? `필요 커넥터: ${pkg.requiredConnector}` : "",
+    "",
+    "[실행 전 단계]",
+    ...(pkg.steps ?? []).map((step, index) => `${index + 1}. ${step}`),
+    "",
+    "[패키지 미리보기]",
+    preview,
+  ].filter(Boolean).join("\n").trim();
 }
 
 async function ensureAutomationTemplateAuditTables(db) {

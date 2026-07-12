@@ -1577,6 +1577,8 @@ function getAutomationAuditEventLabel(type) {
     rejected: "보류",
     executed: "실행",
     dry_run: "리허설",
+    execute_blocked: "실행 차단",
+    execute_done: "실행 완료",
     automation_event: "자동화",
   };
   return labels[type] ?? type ?? "";
@@ -2644,7 +2646,7 @@ async function handleToolActionControl(event) {
   }
 
   if (command === "dry-run") {
-    runToolActionDryRun(action);
+    await runToolActionDryRun(action);
     return;
   }
 
@@ -2654,7 +2656,7 @@ async function handleToolActionControl(event) {
   }
 
   if (command === "execute") {
-    attemptToolActionExecution(action);
+    await attemptToolActionExecution(action);
     return;
   }
 
@@ -2677,8 +2679,61 @@ function findToolAction(actionId) {
   return (state.orch.toolActions ?? []).find((action) => action.id === actionId) ?? null;
 }
 
-function runToolActionDryRun(action = {}) {
+function applyServerToolActionResult(action = {}, data = {}) {
+  const toolAction = data.toolAction ?? {};
+  action.status = normalizeToolActionStatus(toolAction.status ?? action.status);
+  action.approvalNote = toolAction.approvalNote ?? action.approvalNote ?? "";
+  action.updatedAt = toolAction.updatedAt ?? action.updatedAt ?? new Date().toISOString();
+  action.metadata = {
+    ...(action.metadata ?? {}),
+    ...(toolAction.metadata ?? {}),
+  };
+  if (data.dryRun) {
+    action.metadata.dryRun = data.dryRun;
+    action.metadata.safeMode = true;
+    action.metadata.externalExecution = false;
+  }
+  if (data.executionAttempt) {
+    action.metadata.executionAttempt = data.executionAttempt;
+    action.metadata.safeMode = true;
+    action.metadata.externalExecution = Boolean(data.executionAttempt.externalExecution);
+  }
+}
+
+function canFallbackToolActionServerError(error) {
+  return automationStore?.isStorageMissing?.(error)
+    || error?.message === "not_found"
+    || error?.message === "method_not_allowed"
+    || error?.status === 404
+    || error?.status === 405;
+}
+
+async function runToolActionDryRun(action = {}) {
   if (!action?.id) return;
+  if (automationStore?.runToolActionDryRun && isAdminLoggedIn()) {
+    try {
+      const data = await automationStore.runToolActionDryRun(action.id);
+      applyServerToolActionResult(action, data);
+      appendOrchestrationLog({
+        phase: "tool-dryRun",
+        key: action.id,
+        name: "자동화 후보",
+        message: `${action.title || "도구 액션 초안"} · 서버 리허설 완료 · 외부 실행 없음`,
+      });
+      saveState();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      scheduleAutomationOpsRefresh();
+      if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+      showToast("서버 안전 모드로 자동화 리허설 결과를 저장했습니다.");
+      return;
+    } catch (error) {
+      if (!canFallbackToolActionServerError(error)) {
+        console.warn("server dry-run failed:", error);
+        showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "서버 리허설이 실패해 로컬 리허설로 전환합니다.");
+      }
+    }
+  }
+
   const dryRun = buildToolActionDryRun(action);
   action.metadata = {
     ...(action.metadata ?? {}),
@@ -2695,12 +2750,37 @@ function runToolActionDryRun(action = {}) {
   showToast("외부 전송 없이 자동화 리허설 결과를 생성했습니다.");
 }
 
-function attemptToolActionExecution(action = {}) {
+async function attemptToolActionExecution(action = {}) {
   if (!action?.id) return;
   const status = normalizeToolActionStatus(action.status);
   if (status !== "approved") {
     showToast("승인된 자동화 후보만 실행 점검할 수 있습니다.");
     return;
+  }
+
+  if (automationStore?.executeToolAction && isAdminLoggedIn()) {
+    try {
+      const data = await automationStore.executeToolAction(action.id);
+      applyServerToolActionResult(action, data);
+      const attempt = data.executionAttempt ?? action.metadata?.executionAttempt ?? {};
+      appendOrchestrationLog({
+        phase: attempt.ok ? "tool-executeDone" : "tool-executeBlocked",
+        key: action.id,
+        name: "자동화 후보",
+        message: `${action.title || "도구 액션 초안"} · ${attempt.message || "서버 실행 점검 완료"}`,
+      });
+      saveState();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      scheduleAutomationOpsRefresh();
+      if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+      showToast(attempt.ok ? "서버에서 자동화 후보를 실제 실행했습니다." : "서버 안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
+      return;
+    } catch (error) {
+      if (!canFallbackToolActionServerError(error)) {
+        console.warn("server execution check failed:", error);
+        showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "서버 실행 점검이 실패해 로컬 점검으로 전환합니다.");
+      }
+    }
   }
 
   const result = toolAdapters?.execute

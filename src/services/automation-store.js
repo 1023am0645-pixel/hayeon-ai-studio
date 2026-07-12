@@ -126,6 +126,22 @@ function updateToolAction(actionId, patch) {
   });
 }
 
+function runToolActionDryRun(actionId) {
+  if (!actionId) return Promise.resolve(null);
+  return requestAutomation(`/api/automation/tool-actions/${encodeURIComponent(actionId)}/dry-run`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+function executeToolAction(actionId) {
+  if (!actionId) return Promise.resolve(null);
+  return requestAutomation(`/api/automation/tool-actions/${encodeURIComponent(actionId)}/execute`, {
+    method: "POST",
+    body: {},
+  });
+}
+
 function listTemplates({ limit = 24 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 24, 1), 80);
   return requestAutomation(`/api/automation/templates?limit=${safeLimit}`);
@@ -220,6 +236,8 @@ window.HayeonAutomationStore = {
   listToolActions,
   upsertToolAction,
   updateToolAction,
+  runToolActionDryRun,
+  executeToolAction,
   listTemplates,
   upsertTemplate,
   listAuditEvents,
