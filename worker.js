@@ -48,6 +48,25 @@ async function handleAutomationRoute(request, env, url) {
         storage: env.AGENT_DB ? "d1" : "missing",
         binding: "AGENT_DB",
         schema: "migrations/0001_agent_automation.sql",
+        externalTools: getExternalToolStatus(env),
+        background: getBackgroundExecutionStatus(env),
+      },
+      requestId: context.requestId,
+    });
+  }
+
+  if (url.pathname === "/api/automation/connectors" && request.method === "GET") {
+    return json({
+      ok: true,
+      text: "",
+      data: {
+        tools: getExternalToolStatus(env),
+        background: getBackgroundExecutionStatus(env),
+        policy: {
+          externalExecutionDefault: false,
+          requiresOperatorApproval: true,
+          note: "OAuth/Queue/Cron 연결 전까지 Worker는 외부 캘린더·메일·드라이브에 쓰지 않습니다.",
+        },
       },
       requestId: context.requestId,
     });
@@ -152,6 +171,40 @@ async function handleAutomationRoute(request, env, url) {
   }
 
   return agentError(request.method === "GET" || request.method === "POST" ? "not_found" : "method_not_allowed", request.method === "GET" || request.method === "POST" ? 404 : 405, context.requestId);
+}
+
+function getExternalToolStatus(env) {
+  return {
+    calendar: {
+      connected: Boolean(env.GOOGLE_CALENDAR_CLIENT_ID && env.GOOGLE_CALENDAR_CLIENT_SECRET),
+      writeEnabled: false,
+      requiredSecrets: ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"],
+    },
+    mail: {
+      connected: Boolean(env.GOOGLE_MAIL_CLIENT_ID && env.GOOGLE_MAIL_CLIENT_SECRET),
+      writeEnabled: false,
+      requiredSecrets: ["GOOGLE_MAIL_CLIENT_ID", "GOOGLE_MAIL_CLIENT_SECRET"],
+    },
+    drive: {
+      connected: Boolean(env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET),
+      writeEnabled: false,
+      requiredSecrets: ["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET"],
+    },
+    notion: {
+      connected: Boolean(env.NOTION_TOKEN),
+      writeEnabled: false,
+      requiredSecrets: ["NOTION_TOKEN"],
+    },
+  };
+}
+
+function getBackgroundExecutionStatus(env) {
+  return {
+    queueConfigured: Boolean(env.AUTOMATION_QUEUE),
+    cronConfigured: false,
+    writeEnabled: false,
+    note: "Cloudflare Queue/Cron을 연결하기 전까지 브라우저 중심 실행과 서버 저장만 사용합니다.",
+  };
 }
 
 function validateApiRequest(request, env) {

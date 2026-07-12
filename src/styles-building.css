@@ -6885,6 +6885,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   border-color: rgba(189, 139, 43, 0.18);
 }
 
+.tool-action-card small.is-template {
+  color: #5d4470;
+  background: rgba(239, 226, 255, 0.88);
+  border-color: rgba(137, 96, 172, 0.18);
+}
+
+.tool-action-card small.is-execution-blocked {
+  color: #7c3f29;
+  background: rgba(255, 229, 213, 0.88);
+  border-color: rgba(191, 95, 54, 0.18);
+}
+
 .tool-action-card > em {
   align-self: start;
   padding: 4px 8px;
@@ -6940,6 +6952,44 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   color: #173448;
   background: rgba(216, 241, 255, 0.94);
   outline: none;
+}
+
+.automation-policy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  padding: 9px;
+  background: rgba(250, 255, 252, 0.64);
+  border: 1px solid rgba(63, 126, 168, 0.12);
+  border-radius: 13px;
+}
+
+.automation-policy-summary span,
+.automation-policy-summary em {
+  min-height: 23px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.automation-policy-summary span {
+  color: #314d5d;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.automation-policy-summary em.is-on {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.90);
+}
+
+.automation-policy-summary em.is-off {
+  color: #8a4c2b;
+  background: rgba(255, 231, 204, 0.90);
 }
 
 .orch-artifact-library-head {
@@ -7127,6 +7177,27 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   background: rgba(255, 240, 194, 0.08);
   border: 1px solid rgba(217, 185, 112, 0.24);
   border-radius: 14px;
+}
+
+.orch-execution-package {
+  padding: 10px;
+  background: rgba(255, 231, 213, 0.08);
+  border: 1px solid rgba(217, 139, 92, 0.24);
+  border-radius: 14px;
+}
+
+.orch-template-head.is-saved {
+  margin-top: 12px;
+}
+
+.orch-template-chip.is-saved {
+  border-color: rgba(137, 96, 172, 0.22);
+  background: rgba(248, 241, 255, 0.76);
+}
+
+.orch-template-chip.is-saved em {
+  color: #6b4e81;
+  background: rgba(239, 226, 255, 0.90);
 }
 
 .orch-dry-run-output p {

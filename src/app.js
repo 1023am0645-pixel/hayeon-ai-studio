@@ -17,6 +17,7 @@ const {
   summarizeOrchestration,
 } = window.HayeonAiAdapter;
 const automationStore = window.HayeonAutomationStore ?? null;
+const toolAdapters = window.HayeonToolAdapters ?? null;
 const remoteChatLoadedEmployeeIds = new Set();
 const remoteChatLoadingEmployeeIds = new Set();
 let remoteTasksLoaded = false;
@@ -294,6 +295,8 @@ function getInitialState() {
     boardFilter: "all",
     selectedTaskId: null,
     theme: getStoredTheme(),
+    automationPolicy: getDefaultAutomationPolicy(),
+    automationTemplates: [],
   };
 }
 
@@ -313,6 +316,8 @@ function loadState() {
       boardFilter: normalizeBoardFilter(parsed.boardFilter),
       selectedTaskId: null,
       theme: normalizeTheme(parsed.theme ?? getStoredTheme()),
+      automationPolicy: normalizeAutomationPolicy(parsed.automationPolicy),
+      automationTemplates: hydrateAutomationTemplates(parsed.automationTemplates),
       employees: hydrateEmployees(parsed.employees),
       tasks: hydrateTasks(parsed.tasks),
       chat: hydrateChat(parsed.chat),
@@ -321,6 +326,24 @@ function loadState() {
   } catch {
     return getInitialState();
   }
+}
+
+function hydrateAutomationTemplates(templates = []) {
+  if (!Array.isArray(templates)) return [];
+  return templates
+    .filter((template) => template && typeof template === "object")
+    .map((template, index) => ({
+      id: String(template.id || `automation-template-${index}`).slice(0, 120),
+      label: String(template.label || "자동화 템플릿").slice(0, 80),
+      desc: String(template.desc || "저장된 자동화 후보").slice(0, 120),
+      goal: String(template.goal || "").slice(0, 4000),
+      artifactType: String(template.artifactType || "markdown").slice(0, 80),
+      actionType: String(template.actionType || "document_draft").slice(0, 80),
+      createdAt: String(template.createdAt || ""),
+      sourceActionId: String(template.sourceActionId || ""),
+    }))
+    .filter((template) => template.goal)
+    .slice(0, 16);
 }
 
 function getInitialOrchState() {
@@ -342,6 +365,31 @@ function getInitialOrchState() {
     logs: [],
     startedAt: 0,
     completedAt: 0,
+  };
+}
+
+function getDefaultAutomationPolicy() {
+  return {
+    mode: "approval-required",
+    externalExecution: false,
+    connectorReady: false,
+    requireContactReview: true,
+    allowAutoRegisterTasks: false,
+    allowBackgroundQueue: false,
+  };
+}
+
+function normalizeAutomationPolicy(policy = {}) {
+  const base = getDefaultAutomationPolicy();
+  if (!policy || typeof policy !== "object") return base;
+  return {
+    ...base,
+    mode: ["draft-only", "approval-required", "operator-run"].includes(policy.mode) ? policy.mode : base.mode,
+    externalExecution: Boolean(policy.externalExecution),
+    connectorReady: Boolean(policy.connectorReady),
+    requireContactReview: policy.requireContactReview !== false,
+    allowAutoRegisterTasks: Boolean(policy.allowAutoRegisterTasks),
+    allowBackgroundQueue: Boolean(policy.allowBackgroundQueue),
   };
 }
 
@@ -996,6 +1044,7 @@ function closeOrchestrationPanel() {
 
 function renderOrchestrationTemplates() {
   if (!refs.orchestrationTemplates) return;
+  const savedTemplates = hydrateAutomationTemplates(state.automationTemplates);
   refs.orchestrationTemplates.innerHTML = `
     <div class="orch-template-head">
       <strong>빠른 시나리오</strong>
@@ -1015,10 +1064,42 @@ function renderOrchestrationTemplates() {
         </button>
       `).join("")}
     </div>
+    ${savedTemplates.length ? `
+      <div class="orch-template-head is-saved">
+        <strong>내 자동화 템플릿</strong>
+        <span>자동화 후보에서 저장한 반복 업무입니다.</span>
+      </div>
+      <div class="orch-template-list saved-template-list">
+        ${savedTemplates.map((template) => `
+          <button
+            class="orch-template-chip is-saved"
+            type="button"
+            data-saved-template-id="${escapeHtml(template.id)}"
+            data-artifact-type="${escapeHtml(template.artifactType ?? "markdown")}"
+          >
+            <strong>${escapeHtml(template.label)}</strong>
+            <span>${escapeHtml(template.desc)}</span>
+            <em>${escapeHtml(getToolActionTypeLabel(template.actionType))}</em>
+          </button>
+        `).join("")}
+      </div>
+    ` : ""}
   `;
 }
 
 function handleOrchestrationTemplateClick(event) {
+  const savedButton = event.target.closest("[data-saved-template-id]");
+  if (savedButton && !orchestrationUi.isRunning && !refs.orchestrationGoal.disabled) {
+    const template = hydrateAutomationTemplates(state.automationTemplates)
+      .find((item) => item.id === savedButton.dataset.savedTemplateId);
+    if (!template) return;
+    refs.orchestrationGoal.value = template.goal;
+    refs.orchestrationGoal.dataset.scenarioId = "";
+    refs.orchestrationGoal.focus();
+    showToast(`${template.label} 템플릿을 입력했습니다. 필요하면 수정 후 실행하세요.`);
+    return;
+  }
+
   const button = event.target.closest("[data-orch-template-id]");
   if (!button || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
   const template = orchestrationTemplates.find((item) => item.id === button.dataset.orchTemplateId);
@@ -1399,6 +1480,9 @@ function appendToolActionAuditLog(action = {}, event = "updated") {
     dryRun: "리허설 완료",
     executed: "완료 표시",
     task: "할 일판 등록",
+    executeBlocked: "실행 차단",
+    executeDone: "실제 실행 완료",
+    template: "템플릿 저장",
   };
   appendOrchestrationLog({
     phase: `tool-${event}`,
@@ -2145,6 +2229,16 @@ async function handleToolActionControl(event) {
     return;
   }
 
+  if (command === "execute") {
+    attemptToolActionExecution(action);
+    return;
+  }
+
+  if (command === "template") {
+    saveToolActionAsAutomationTemplate(action);
+    return;
+  }
+
   if (command === "copy") {
     try {
       await copyTextToClipboard(buildToolActionMarkdown(action));
@@ -2175,6 +2269,57 @@ function runToolActionDryRun(action = {}) {
   renderOrchestrationResults(buildStoredOrchestrationResult());
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
   showToast("외부 전송 없이 자동화 리허설 결과를 생성했습니다.");
+}
+
+function attemptToolActionExecution(action = {}) {
+  if (!action?.id) return;
+  const status = normalizeToolActionStatus(action.status);
+  if (status !== "approved") {
+    showToast("승인된 자동화 후보만 실행 점검할 수 있습니다.");
+    return;
+  }
+
+  const result = toolAdapters?.execute
+    ? toolAdapters.execute(action, { policy: state.automationPolicy })
+    : {
+      ok: false,
+      status: "blocked",
+      code: "adapter_missing",
+      externalExecution: false,
+      message: "도구 어댑터 서비스가 로드되지 않아 실제 실행을 막았습니다.",
+      package: null,
+    };
+  const now = new Date().toISOString();
+  action.metadata = {
+    ...(action.metadata ?? {}),
+    executionAttempt: {
+      at: now,
+      ok: Boolean(result.ok),
+      status: result.status || "blocked",
+      code: result.code || "",
+      message: result.message || "",
+      externalExecution: Boolean(result.externalExecution),
+      package: result.package ?? null,
+    },
+    safeMode: true,
+    externalExecution: Boolean(result.externalExecution),
+  };
+
+  if (result.ok) {
+    action.status = "executed";
+    action.approvalNote = "승인 후 실제 도구 실행이 완료됐습니다.";
+    appendToolActionAuditLog(action, "executeDone");
+  } else {
+    action.approvalNote = result.message || "실제 실행이 차단됐습니다.";
+    appendToolActionAuditLog(action, "executeBlocked");
+  }
+
+  action.updatedAt = now;
+  updateRemoteToolAction(action);
+  saveState();
+  renderOrchestrationResults(buildStoredOrchestrationResult());
+  if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+  showToast(result.ok ? "자동화 후보를 실제 실행했습니다." : "안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
 }
 
 function createBoardTaskFromToolAction(action = {}) {
@@ -2246,6 +2391,51 @@ function createBoardTaskFromToolAction(action = {}) {
   return task;
 }
 
+function saveToolActionAsAutomationTemplate(action = {}) {
+  if (!action?.id) return null;
+  const payload = action.payload ?? {};
+  const goal = [
+    payload.goal ? `상위 목표: ${payload.goal}` : "",
+    payload.subtask || action.title || "",
+    "",
+    "[반복 실행 기준]",
+    action.description || "",
+    payload.contentPreview ? `\n[참고 산출물]\n${payload.contentPreview}` : "",
+  ].filter(Boolean).join("\n").trim();
+  if (!goal) {
+    showToast("저장할 템플릿 본문을 찾지 못했습니다.");
+    return null;
+  }
+
+  const template = {
+    id: `saved-${action.id}`.replace(/[^a-z0-9가-힣_-]+/gi, "-").slice(0, 120),
+    label: (action.title || payload.subtask || "자동화 템플릿").slice(0, 80),
+    desc: `${getToolActionTypeLabel(action.actionType)} · ${payload.employeeName || "AI 직원"}`.slice(0, 120),
+    goal,
+    artifactType: payload.artifactType || "markdown",
+    actionType: action.actionType || "document_draft",
+    createdAt: new Date().toISOString(),
+    sourceActionId: action.id,
+  };
+  const current = hydrateAutomationTemplates(state.automationTemplates);
+  const next = [template, ...current.filter((item) => item.id !== template.id)].slice(0, 16);
+  state.automationTemplates = next;
+  action.metadata = {
+    ...(action.metadata ?? {}),
+    savedTemplateId: template.id,
+    savedTemplateAt: template.createdAt,
+  };
+  action.updatedAt = template.createdAt;
+  appendToolActionAuditLog(action, "template");
+  saveState();
+  updateRemoteToolAction(action);
+  renderOrchestrationTemplates();
+  renderOrchestrationResults(buildStoredOrchestrationResult());
+  if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+  showToast("자동화 후보를 내 템플릿으로 저장했습니다.");
+  return template;
+}
+
 function buildToolActionTaskTitle(action = {}) {
   const payload = action.payload ?? {};
   const base = payload.subtask || action.title || "자동화 후보 실행 준비";
@@ -2260,6 +2450,9 @@ function getEmployeeByName(name = "") {
 }
 
 function buildToolActionDryRun(action = {}) {
+  if (toolAdapters?.buildDryRun) {
+    return toolAdapters.buildDryRun(action, { policy: state.automationPolicy });
+  }
   const payload = action.payload ?? {};
   const actionType = action.actionType || "document_draft";
   const previewLines = extractDryRunLines(payload.contentPreview || action.description || "", 6);
@@ -2381,6 +2574,11 @@ function openToolActionPreview(action = {}) {
   const status = normalizeToolActionStatus(action.status);
   const dryRun = action.metadata?.dryRun;
   const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
+  const executionAttempt = action.metadata?.executionAttempt;
+  const executionPackage = executionAttempt?.package ?? dryRun?.package ?? null;
+  const savedTemplate = action.metadata?.savedTemplateId
+    ? hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === action.metadata.savedTemplateId)
+    : null;
   const safety = buildToolActionSafetySummary(action);
   refs.orchestrationDetailContent.innerHTML = `
     <div class="orch-detail-meta">
@@ -2417,11 +2615,28 @@ function openToolActionPreview(action = {}) {
         <p>${escapeHtml(boardTask.title)} · ${escapeHtml(getTaskStatusLabel(boardTask))}</p>
       </section>
     ` : ""}
+    ${savedTemplate ? `
+      <section class="orch-linked-task">
+        <span>내 템플릿</span>
+        <p>${escapeHtml(savedTemplate.label)} · ${escapeHtml(savedTemplate.desc)}</p>
+      </section>
+    ` : ""}
     ${dryRun?.outputText ? `
       <section class="orch-dry-run-output">
         <span>리허설 결과</span>
         <p>${escapeHtml(dryRun.outputText)}</p>
         <small>${escapeHtml((dryRun.warnings ?? []).join(" · "))}</small>
+      </section>
+    ` : ""}
+    ${executionPackage ? `
+      <section class="orch-execution-package">
+        <span>실행 패키지 · ${escapeHtml(executionPackage.adapter || executionPackage.targetApp || "Tool")}</span>
+        <p>${escapeHtml([
+          `상태: ${executionPackage.status === "ready" ? "실행 가능" : "차단됨"}`,
+          `대상: ${executionPackage.targetApp || "확인 필요"}`,
+          `차단 사유: ${executionPackage.blocker || executionAttempt?.code || "없음"}`,
+          executionAttempt?.message ? `메모: ${executionAttempt.message}` : "",
+        ].filter(Boolean).join("\n"))}</p>
       </section>
     ` : ""}
     <div class="orch-detail-actions">
@@ -2430,7 +2645,9 @@ function openToolActionPreview(action = {}) {
         <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
       ` : ""}
       ${status === "pending" || status === "approved" ? `<button type="button" data-tool-action-control="dry-run" data-tool-action-id="${escapeHtml(action.id)}">리허설 실행</button>` : ""}
+      ${status === "approved" ? `<button type="button" data-tool-action-control="execute" data-tool-action-id="${escapeHtml(action.id)}">실행 점검</button>` : ""}
       ${(status === "approved" || status === "executed") ? `<button type="button" data-tool-action-control="task" data-tool-action-id="${escapeHtml(action.id)}">${boardTask ? "할 일판 열기" : "할 일판 등록"}</button>` : ""}
+      ${(status === "approved" || status === "executed") ? `<button type="button" data-tool-action-control="template" data-tool-action-id="${escapeHtml(action.id)}">${savedTemplate ? "템플릿 갱신" : "템플릿 저장"}</button>` : ""}
       ${status === "approved" ? `<button type="button" data-tool-action-control="complete" data-tool-action-id="${escapeHtml(action.id)}">완료 표시</button>` : ""}
       <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
     </div>
@@ -2917,6 +3134,10 @@ function renderToolActions(actions = []) {
     const canDryRun = status === "pending" || status === "approved";
     const dryRun = action.metadata?.dryRun;
     const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
+    const executionAttempt = action.metadata?.executionAttempt;
+    const savedTemplate = action.metadata?.savedTemplateId
+      ? hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === action.metadata.savedTemplateId)
+      : null;
     return `
       <article class="tool-action-card is-${escapeHtml(status)}${dryRun ? " has-dry-run" : ""}">
         <div>
@@ -2924,7 +3145,9 @@ function renderToolActions(actions = []) {
           <strong>${escapeHtml(action.title || "도구 액션 초안")}</strong>
           <p>${escapeHtml(action.description || "외부 실행 전 승인 대기 중인 초안입니다.")}</p>
           ${dryRun ? `<small>리허설 완료 · 외부 전송 없음</small>` : ""}
+          ${executionAttempt ? `<small class="is-execution-blocked">실행 점검 · ${escapeHtml(executionAttempt.ok ? "완료" : "차단")}</small>` : ""}
           ${boardTask ? `<small class="is-board-task">할 일판 등록됨 · ${escapeHtml(getTaskStatusLabel(boardTask))}</small>` : ""}
+          ${savedTemplate ? `<small class="is-template">템플릿 저장됨</small>` : ""}
         </div>
         <em>${escapeHtml(getToolActionStatusLabel(status))}</em>
         <div class="tool-action-controls">
@@ -2934,7 +3157,9 @@ function renderToolActions(actions = []) {
             <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
           ` : ""}
           ${canDryRun ? `<button type="button" data-tool-action-control="dry-run" data-tool-action-id="${escapeHtml(action.id)}">리허설</button>` : ""}
+          ${status === "approved" ? `<button type="button" data-tool-action-control="execute" data-tool-action-id="${escapeHtml(action.id)}">실행 점검</button>` : ""}
           ${(status === "approved" || status === "executed") ? `<button type="button" data-tool-action-control="task" data-tool-action-id="${escapeHtml(action.id)}">${boardTask ? "할 일판 열기" : "할 일판 등록"}</button>` : ""}
+          ${(status === "approved" || status === "executed") ? `<button type="button" data-tool-action-control="template" data-tool-action-id="${escapeHtml(action.id)}">${savedTemplate ? "템플릿 갱신" : "템플릿 저장"}</button>` : ""}
           ${canComplete ? `<button type="button" data-tool-action-control="complete" data-tool-action-id="${escapeHtml(action.id)}">완료 표시</button>` : ""}
           <button type="button" data-tool-action-control="copy" data-tool-action-id="${escapeHtml(action.id)}">초안 복사</button>
         </div>
@@ -2948,8 +3173,26 @@ function renderToolActions(actions = []) {
         <strong>자동화 후보</strong>
         <span>외부 실행 없이 승인 대기 초안만 생성됩니다.</span>
       </div>
+      ${renderAutomationPolicySummary()}
       <div class="tool-action-list">${rows}</div>
     </section>
+  `;
+}
+
+function renderAutomationPolicySummary() {
+  const policy = normalizeAutomationPolicy(state.automationPolicy);
+  const modeLabel = {
+    "draft-only": "초안만",
+    "approval-required": "승인 필요",
+    "operator-run": "운영자 실행",
+  }[policy.mode] ?? "승인 필요";
+  return `
+    <div class="automation-policy-summary" aria-label="자동화 운영 정책">
+      <span>운영 모드 · ${escapeHtml(modeLabel)}</span>
+      <em class="${policy.externalExecution ? "is-on" : "is-off"}">외부 실행 ${policy.externalExecution ? "ON" : "OFF"}</em>
+      <em class="${policy.connectorReady ? "is-on" : "is-off"}">커넥터 ${policy.connectorReady ? "연결" : "미연결"}</em>
+      <em class="${policy.allowBackgroundQueue ? "is-on" : "is-off"}">백그라운드 ${policy.allowBackgroundQueue ? "ON" : "OFF"}</em>
+    </div>
   `;
 }
 

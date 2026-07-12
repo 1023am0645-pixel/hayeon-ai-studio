@@ -14,3 +14,12 @@ binding = "AGENT_DB"
 database_name = "hayeon-ai-studio-agent"
 database_id = "6c58fb88-648e-4e1e-bfc1-adaf257f2ce9"
 migrations_dir = "migrations"
+
+# Future background automation. Keep disabled until an explicit Cloudflare Queue is created.
+# [[queues.producers]]
+# binding = "AUTOMATION_QUEUE"
+# queue = "hayeon-ai-studio-automation"
+
+# Future scheduled automation. Enable only after idempotent server-side workers are implemented.
+# [triggers]
+# crons = ["*/30 * * * *"]
