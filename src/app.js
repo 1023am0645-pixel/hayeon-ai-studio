@@ -2469,11 +2469,16 @@ function handleOrchestrationReviewAction(event) {
   event.preventDefault();
   event.stopPropagation();
 
+  const action = actionButton.dataset.orchAction;
+  if (action === "approve-all") {
+    approveAllOrchestrationReviews();
+    return;
+  }
+
   const itemNode = actionButton.closest("[data-orch-key]");
   const key = actionButton.dataset.orchKey || itemNode?.dataset.orchKey;
   if (!key) return;
 
-  const action = actionButton.dataset.orchAction;
   if (action === "approve") {
     approveOrchestrationItem(key);
     return;
@@ -3202,6 +3207,45 @@ async function approveOrchestrationItem(key) {
   }
 }
 
+async function approveAllOrchestrationReviews() {
+  if (orchestrationUi.isRunning) return;
+  const reviewItems = (state.orch.items ?? []).filter((item) => !item.isSummary && item.status === "review");
+  if (!reviewItems.length) {
+    showToast("승인할 검토 대기 업무가 없습니다.");
+    return;
+  }
+
+  orchestrationUi.isRunning = true;
+  state.orch.running = true;
+  state.orch.completedAt = 0;
+  reviewItems.forEach((item) => {
+    item.status = "queued";
+    item.phase = "queued";
+    appendOrchestrationLog({
+      phase: "approved",
+      key: item.key,
+      name: item.name,
+      message: `${item.name} 업무를 전체 승인으로 실행 대기열에 넣었습니다.`,
+    });
+    syncRemoteOrchestrationItem(item);
+  });
+  saveState();
+  closeOrchestrationDetail();
+  renderOrchestrationProgress();
+  renderOrchestrationBadge();
+  showToast(`${reviewItems.length}개 검토 업무를 승인하고 실행을 시작합니다.`);
+
+  try {
+    await runQueuedOrchestrationItems({ onUpdate: applyOrchestrationUpdate });
+    const result = await finishOrchestrationIfReady({ onUpdate: applyOrchestrationUpdate });
+    renderOrchestrationProgress(result);
+    renderOrchestrationResults(result);
+  } finally {
+    orchestrationUi.isRunning = false;
+    renderOrchestrationBadge();
+  }
+}
+
 function editOrchestrationItem(key) {
   const item = findOrchestrationItem(key);
   if (!item || item.status !== "review") return;
@@ -3444,7 +3488,11 @@ function renderOrchestrationProgress(result = null) {
   if (reviewCount) {
     refs.orchestrationProgress.innerHTML = `
       <strong>검토 대기</strong>
-      <span>${reviewCount}개 업무는 승인 후 실행됩니다. 완료 ${doneCount}명 · 처리 중 ${activeCount}명 · 오류 ${errorCount}명 · 건너뜀 ${skippedCount}명</span>
+      <span>${reviewCount}개 업무가 안전 검토에서 멈춰 있습니다. 바로 이어가려면 전체 승인 후 실행을 누르세요. 완료 ${doneCount}명 · 처리 중 ${activeCount}명 · 오류 ${errorCount}명 · 건너뜀 ${skippedCount}명</span>
+      <div class="orch-bulk-review-actions">
+        <button type="button" data-orch-action="approve-all">전체 승인 후 실행</button>
+        <em>개별 확인이 필요하면 아래 업무별 승인·수정·건너뛰기를 사용하세요.</em>
+      </div>
       ${progressRows ? `<ul>${progressRows}</ul>` : ""}
     `;
     return;
@@ -6436,7 +6484,7 @@ async function runOrchestrationToBoard(goal, { onUpdate } = {}) {
   const result = await finishOrchestrationIfReady({ onUpdate });
   const reviewCount = (state.orch.items ?? []).filter((item) => !item.isSummary && item.status === "review").length;
   if (reviewCount) {
-    showToast(`검토 필요 업무 ${reviewCount}개가 대기 중입니다.`);
+    showToast(`검토 필요 업무 ${reviewCount}개가 대기 중입니다. 전체 승인 후 실행을 누르면 계속됩니다.`);
   } else {
     showToast(`오케스트레이션 업무 ${(result.tasks ?? []).length}개를 할 일판에 등록했습니다.`);
   }

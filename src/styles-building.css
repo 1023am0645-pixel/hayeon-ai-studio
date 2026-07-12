@@ -6586,6 +6586,47 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-style: normal;
 }
 
+.orch-bulk-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 246, 223, 0.84);
+  border: 1px solid rgba(224, 171, 74, 0.28);
+  border-radius: 14px;
+}
+
+.orch-bulk-review-actions button {
+  min-height: 34px;
+  padding: 7px 14px;
+  color: #2d1b08;
+  background: linear-gradient(135deg, #f3b83f, #f7cf75);
+  border: 1px solid rgba(169, 110, 26, 0.24);
+  border-radius: 999px;
+  box-shadow: 0 8px 16px rgba(139, 87, 18, 0.14);
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.orch-bulk-review-actions button:hover,
+.orch-bulk-review-actions button:focus-visible {
+  box-shadow: 0 10px 20px rgba(139, 87, 18, 0.18);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.orch-bulk-review-actions em {
+  color: rgba(68, 43, 20, 0.62);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .orch-review-actions {
   display: flex;
   justify-content: flex-end;
