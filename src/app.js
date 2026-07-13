@@ -32,6 +32,8 @@ let automationOpsLoading = false;
 let automationConnectorStatus = null;
 let remoteAuditEvents = [];
 let automationOpsRefreshTimer = 0;
+let remoteToolActionsLoading = false;
+let remoteToolActionsLoadedRunId = "";
 let artifactLibraryFilters = {
   query: "",
   employeeId: "all",
@@ -653,6 +655,7 @@ function handleAdminModalClick(event) {
     resetRemoteTaskCache();
     resetRemoteArtifactLibraryCache();
     resetRemoteTemplateCache();
+    resetRemoteToolActionCache();
     resetAutomationOpsCache();
     closeAdminModal();
     updateAdminButton();
@@ -714,6 +717,7 @@ function resetAutomationLocalCache() {
   resetRemoteTaskCache();
   resetRemoteArtifactLibraryCache();
   resetRemoteTemplateCache();
+  resetRemoteToolActionCache();
   resetAutomationOpsCache();
   saveState();
 }
@@ -1077,6 +1081,7 @@ function openOrchestrationPanel() {
   loadAutomationOps({ force: true });
   loadRemoteArtifactLibrary();
   loadRemoteAutomationTemplatesIfNeeded({ force: true });
+  loadRemoteToolActionsForCurrentRun({ force: true });
   refs.orchestrationGoal.focus();
 }
 
@@ -1484,6 +1489,7 @@ function scheduleAutomationOpsRefresh() {
   window.clearTimeout(automationOpsRefreshTimer);
   automationOpsRefreshTimer = window.setTimeout(() => {
     loadAutomationOps({ force: true });
+    loadRemoteToolActionsForCurrentRun({ force: true });
   }, 700);
 }
 
@@ -1672,6 +1678,7 @@ function hydrateOrchestrationFromRemoteRun(data) {
     toolActions: hydrateRemoteToolActions(data?.toolActions ?? []),
     logs: buildRestoredOrchestrationLogs(run, hydratedItems),
   };
+  remoteToolActionsLoadedRunId = runId;
 }
 
 function hydrateRemoteArtifacts(artifacts, runId = "") {
@@ -1720,6 +1727,62 @@ function hydrateRemoteToolActions(actions = []) {
       executedAt: action.executed_at ?? "",
     };
   });
+}
+
+async function loadRemoteToolActionsForCurrentRun({ force = false } = {}) {
+  const runId = state.orch.remoteRunId ?? "";
+  if (!automationStore?.listToolActions || !isAdminLoggedIn() || !runId) return;
+  if (remoteToolActionsLoading) return;
+  if (remoteToolActionsLoadedRunId === runId && !force) return;
+
+  remoteToolActionsLoading = true;
+  try {
+    const data = await automationStore.listToolActions({ runId, limit: 40 });
+    const remoteActions = hydrateRemoteToolActions(data?.toolActions ?? []);
+    const changed = mergeRemoteToolActions(remoteActions);
+    remoteToolActionsLoadedRunId = runId;
+    if (changed) {
+      saveState();
+      if (!refs.orchestrationPanel?.classList.contains("is-hidden")) {
+        renderStoredOrchestrationPanel();
+      }
+    }
+  } catch (error) {
+    if (!automationStore.isStorageMissing?.(error)) console.warn("remote tool action load failed:", error);
+  } finally {
+    remoteToolActionsLoading = false;
+  }
+}
+
+function mergeRemoteToolActions(remoteActions = []) {
+  if (!Array.isArray(remoteActions) || !remoteActions.length) return false;
+  const previousJson = JSON.stringify(state.orch.toolActions ?? []);
+  const byId = new Map((state.orch.toolActions ?? []).map((action) => [action.id, action]));
+
+  remoteActions.forEach((remoteAction) => {
+    if (!remoteAction.id) return;
+    const previous = byId.get(remoteAction.id);
+    byId.set(remoteAction.id, {
+      ...(previous ?? {}),
+      ...remoteAction,
+      payload: {
+        ...(previous?.payload ?? {}),
+        ...(remoteAction.payload ?? {}),
+      },
+      metadata: {
+        ...(previous?.metadata ?? {}),
+        ...(remoteAction.metadata ?? {}),
+      },
+      status: normalizeToolActionStatus(remoteAction.status ?? previous?.status),
+      approvalNote: remoteAction.approvalNote ?? previous?.approvalNote ?? "",
+      updatedAt: remoteAction.updatedAt || previous?.updatedAt || new Date().toISOString(),
+    });
+  });
+
+  state.orch.toolActions = [...byId.values()]
+    .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
+    .slice(0, 40);
+  return previousJson !== JSON.stringify(state.orch.toolActions ?? []);
 }
 
 function getOrchestrationStatusLabel(status) {
@@ -1948,6 +2011,7 @@ async function createRemoteOrchestrationRun(goal) {
     state.orch.remoteRunId = runId;
     state.orch.remoteStorage = "d1";
     state.orch.remoteError = "";
+    resetRemoteToolActionCache();
     saveState();
     return runId;
   } catch (error) {
@@ -4368,6 +4432,11 @@ function resetRemoteArtifactLibraryCache() {
 function resetRemoteTemplateCache() {
   remoteTemplatesLoaded = false;
   remoteTemplatesLoading = false;
+}
+
+function resetRemoteToolActionCache() {
+  remoteToolActionsLoading = false;
+  remoteToolActionsLoadedRunId = "";
 }
 
 function resetAutomationOpsCache() {
