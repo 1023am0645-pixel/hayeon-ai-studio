@@ -1458,6 +1458,7 @@ function renderAutomationOps() {
     .join("");
   const auditRows = renderAutomationAuditRows(remoteAuditEvents);
   const setupGuide = renderAutomationConnectorSetupGuide(tools, background);
+  const nextSteps = renderAutomationOpsNextSteps(automationHealthStatus, tools, background, policy);
 
   refs.automationOps.innerHTML = `
     <div class="automation-ops-head">
@@ -1489,6 +1490,7 @@ function renderAutomationOps() {
       <span>${policy.requiresOperatorApproval === false ? "자동 실행 허용" : "실행 전 승인 필요"}</span>
       <p>${escapeHtml(policy.note || "외부 도구 쓰기는 명시 승인 후 단계적으로 열어갑니다.")}</p>
     </div>
+    ${nextSteps}
     <div class="automation-audit-head">
       <strong>최근 감사 로그</strong>
       <span>${remoteAuditEvents.length ? `${remoteAuditEvents.length}건` : "기록 없음"}</span>
@@ -1602,6 +1604,87 @@ function renderAutomationConnectorSetupGuide(tools = {}, background = {}) {
         </ul>
       ` : "<p>외부 도구 인증 정보는 모두 감지됐습니다.</p>"}
       ${backgroundNotes.length ? `<p>백그라운드 실행: ${backgroundNotes.map(escapeHtml).join(" · ")}</p>` : ""}
+    </div>
+  `;
+}
+
+function getAutomationOpsNextSteps(health = {}, tools = {}, background = {}, policy = {}) {
+  const summary = health?.storageSummary && typeof health.storageSummary === "object" ? health.storageSummary : null;
+  const missingSecrets = ["calendar", "mail", "drive", "notion"]
+    .flatMap((key) => getAutomationConnectorMissingSecrets(tools[key] ?? {}));
+  const uniqueMissingSecrets = [...new Set(missingSecrets)].sort();
+  const steps = [];
+
+  if (health?.storage !== "d1") {
+    steps.push({
+      tone: "warn",
+      title: "D1 바인딩 확인",
+      text: "AGENT_DB가 연결되어야 실행 기록, 산출물, 감사 로그가 서버에 남습니다.",
+    });
+  } else if (!summary || Number(summary.missingTables ?? 0) > 0 || Number(summary.errorTables ?? 0) > 0) {
+    steps.push({
+      tone: "warn",
+      title: "D1 마이그레이션 적용",
+      text: "누락되었거나 확인 실패한 테이블이 있어 migrations를 remote DB에 반영해야 합니다.",
+    });
+  } else {
+    steps.push({
+      tone: "ready",
+      title: "서버 저장소 준비",
+      text: `D1 테이블 ${Number(summary.readyTables ?? 0)}/${Number(summary.tableCount ?? 0)}개가 준비됐습니다.`,
+    });
+  }
+
+  if (uniqueMissingSecrets.length) {
+    steps.push({
+      tone: "warn",
+      title: "커넥터 secret 입력",
+      text: `${uniqueMissingSecrets.length}개 설정명이 필요합니다. 설정 명령 복사 후 Wrangler에서 값을 직접 입력하세요.`,
+    });
+  } else {
+    steps.push({
+      tone: "ready",
+      title: "커넥터 인증 정보 감지",
+      text: "현재 감지된 누락 secret은 없습니다. 실제 외부 쓰기는 별도 승인 단계가 필요합니다.",
+    });
+  }
+
+  if (!background.queueConfigured || !background.cronConfigured) {
+    steps.push({
+      tone: "info",
+      title: "백그라운드 실행은 보류",
+      text: "Queue/Cron은 멱등성, 재시도, 중복 실행 방지 정책을 확정한 뒤 여는 것이 안전합니다.",
+    });
+  }
+
+  if (policy.requiresOperatorApproval !== false) {
+    steps.push({
+      tone: "ready",
+      title: "승인 기반 안전 모드 유지",
+      text: "현재 구조는 외부 전송 전 운영자 승인을 요구하므로 개인 업무 자동화 초기 운영에 적합합니다.",
+    });
+  }
+
+  return steps;
+}
+
+function renderAutomationOpsNextSteps(health = {}, tools = {}, background = {}, policy = {}) {
+  const steps = getAutomationOpsNextSteps(health, tools, background, policy);
+  if (!steps.length) return "";
+  return `
+    <div class="automation-next-steps" aria-label="자동화 운영 추천 다음 단계">
+      <div class="automation-next-steps-head">
+        <strong>추천 다음 단계</strong>
+        <span>${steps.filter((step) => step.tone === "warn").length ? "확인 필요 항목 있음" : "운영 준비 양호"}</span>
+      </div>
+      <ol>
+        ${steps.map((step) => `
+          <li class="is-${escapeHtml(step.tone)}">
+            <strong>${escapeHtml(step.title)}</strong>
+            <p>${escapeHtml(step.text)}</p>
+          </li>
+        `).join("")}
+      </ol>
     </div>
   `;
 }
@@ -1860,6 +1943,11 @@ function buildAutomationOpsReport() {
   } else {
     lines.push("- 저장소 요약을 불러오지 못했습니다.");
   }
+
+  lines.push("", "## 추천 다음 단계");
+  getAutomationOpsNextSteps(health, tools, background, policy).forEach((step, index) => {
+    lines.push(`${index + 1}. ${step.title}: ${step.text}`);
+  });
 
   lines.push("", "## 외부 도구 커넥터");
   ["calendar", "mail", "drive", "notion"].forEach((key) => {

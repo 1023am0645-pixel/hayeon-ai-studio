@@ -6344,6 +6344,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-background-card,
 .automation-policy-note,
 .automation-setup-guide,
+.automation-next-steps,
 .automation-audit-item,
 .admin-automation-status {
   min-width: 0;
@@ -6439,7 +6440,8 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-background-card,
 .automation-health-card,
 .automation-policy-note,
-.automation-setup-guide {
+.automation-setup-guide,
+.automation-next-steps {
   display: grid;
   gap: 6px;
 }
@@ -6448,11 +6450,91 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-health-card p,
 .automation-policy-note p,
 .automation-setup-guide p,
+.automation-next-steps p,
 .admin-automation-status p {
   margin: 0;
   color: rgba(37, 72, 59, 0.68);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.automation-next-steps {
+  background:
+    linear-gradient(135deg, rgba(250, 255, 252, 0.90), rgba(255, 252, 244, 0.76)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.automation-next-steps-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+
+.automation-next-steps-head strong {
+  color: #243d32;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.automation-next-steps-head span {
+  color: rgba(37, 72, 59, 0.58);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.automation-next-steps ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: automation-next-step;
+}
+
+.automation-next-steps li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px 8px 34px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(77, 151, 126, 0.10);
+  border-radius: 11px;
+  counter-increment: automation-next-step;
+}
+
+.automation-next-steps li::before {
+  content: counter(automation-next-step);
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: #25483b;
+  background: rgba(232, 250, 240, 0.94);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.automation-next-steps li.is-warn::before {
+  color: #7a421f;
+  background: rgba(255, 231, 204, 0.94);
+}
+
+.automation-next-steps li.is-info::before {
+  color: #2b536a;
+  background: rgba(228, 246, 255, 0.94);
+}
+
+.automation-next-steps li strong {
+  color: #274838;
+  font-size: 11px;
+  font-weight: 950;
 }
 
 .automation-setup-guide {
