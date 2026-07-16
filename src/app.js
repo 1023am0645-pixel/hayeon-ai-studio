@@ -1416,13 +1416,22 @@ function renderOrchestrationHistory(runs) {
           <strong>${escapeHtml(run.goal || "목표 없음")}</strong>
           <em>${escapeHtml(meta || "기록 정보 없음")}</em>
         </button>
-        <button
-          class="orch-history-rerun"
-          type="button"
-          data-orch-run-action="rerun"
-          data-orch-run-id="${escapeHtml(run.id)}"
-          title="이 실행 목표로 다시 실행"
-        >다시 실행</button>
+        <div class="orch-history-actions" aria-label="실행 기록 작업">
+          <button
+            class="orch-history-template"
+            type="button"
+            data-orch-run-action="template"
+            data-orch-run-id="${escapeHtml(run.id)}"
+            title="이 실행 목표를 템플릿으로 저장"
+          >템플릿</button>
+          <button
+            class="orch-history-rerun"
+            type="button"
+            data-orch-run-action="rerun"
+            data-orch-run-id="${escapeHtml(run.id)}"
+            title="이 실행 목표로 다시 실행"
+          >다시 실행</button>
+        </div>
       </article>
     `;
   }).join("");
@@ -2295,6 +2304,10 @@ function handleOrchestrationHistoryClick(event) {
     rerunStoredOrchestrationRun(runId);
     return;
   }
+  if (control.dataset.orchRunAction === "template") {
+    saveStoredRunAsAutomationTemplate(runId);
+    return;
+  }
   loadStoredOrchestrationRun(runId);
 }
 
@@ -2343,6 +2356,42 @@ async function rerunStoredOrchestrationRun(runId) {
     showToast("이전 실행 목표로 다시 시작합니다.");
   } catch (error) {
     showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "실행 기록을 다시 시작하지 못했습니다.");
+  }
+}
+
+async function saveStoredRunAsAutomationTemplate(runId) {
+  if (!automationStore?.getRun || !runId || orchestrationUi.isRunning) return;
+  try {
+    const data = await automationStore.getRun(runId);
+    const run = data?.run ?? {};
+    const goal = String(run.goal ?? "").trim();
+    if (!goal) {
+      showToast("템플릿으로 저장할 실행 목표가 비어 있습니다.");
+      return;
+    }
+    const metadata = safeParseJson(run.metadata_json);
+    const createdAt = new Date().toISOString();
+    const template = {
+      id: `history-${String(run.id ?? runId)}`.replace(/[^a-z0-9가-힣_-]+/gi, "-").slice(0, 120),
+      label: `${String(metadata.scenarioLabel || goal).slice(0, 56)} 템플릿`.slice(0, 80),
+      desc: [
+        metadata.artifactType ? getArtifactTypeLabel(metadata.artifactType) : "실행 기록",
+        formatRemoteDate(run.completed_at || run.updated_at || run.created_at),
+      ].filter(Boolean).join(" · ").slice(0, 120),
+      goal,
+      artifactType: metadata.artifactType || "markdown",
+      actionType: "automation_recipe",
+      createdAt,
+      sourceActionId: "",
+    };
+    const current = hydrateAutomationTemplates(state.automationTemplates);
+    state.automationTemplates = [template, ...current.filter((item) => item.id !== template.id)].slice(0, 16);
+    saveState();
+    syncRemoteAutomationTemplate(template);
+    renderOrchestrationTemplates();
+    showToast("실행 기록을 내 자동화 템플릿으로 저장했습니다.");
+  } catch (error) {
+    showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "실행 기록을 템플릿으로 저장하지 못했습니다.");
   }
 }
 

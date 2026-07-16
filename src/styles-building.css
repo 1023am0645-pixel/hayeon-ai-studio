@@ -6320,7 +6320,14 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   outline: none;
 }
 
-.orch-history-rerun {
+.orch-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.orch-history-actions button {
   align-self: center;
   padding: 5px 8px;
   color: #214c3b;
@@ -6333,11 +6340,23 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   white-space: nowrap;
 }
 
-.orch-history-rerun:hover,
-.orch-history-rerun:focus-visible {
+.orch-history-actions button:hover,
+.orch-history-actions button:focus-visible {
   color: #173629;
   background: rgba(202, 239, 219, 0.98);
   outline: none;
+}
+
+.orch-history-actions .orch-history-template {
+  color: #5d4470;
+  background: rgba(247, 237, 255, 0.86);
+  border-color: rgba(137, 96, 172, 0.18);
+}
+
+.orch-history-actions .orch-history-template:hover,
+.orch-history-actions .orch-history-template:focus-visible {
+  color: #3e2852;
+  background: rgba(239, 226, 255, 0.96);
 }
 
 .orch-history-item span {
