@@ -2785,6 +2785,19 @@ async function handleToolActionBulk(command = "") {
     return;
   }
 
+  if (command === "download-readiness-report") {
+    if (!actions.length) {
+      showToast("저장할 자동화 후보 리포트가 없습니다.");
+      return;
+    }
+    downloadTextFile(
+      makeOrchestrationFilename(`${state.orch.goal || "automation-readiness"}-readiness`),
+      buildToolActionReadinessReport(actions)
+    );
+    showToast("자동화 후보 준비 리포트를 Markdown으로 저장했습니다.");
+    return;
+  }
+
   if (command === "prepare-safe-all") {
     const targets = getToolActionSafePrepareTargets(actions);
     if (!targets.length) {
@@ -4129,12 +4142,16 @@ function renderToolActionReadinessSummary(actions = []) {
   if (!actions.length) return "";
   const stats = getToolActionReadinessStats(actions);
   const readyTone = stats.needsPrepare ? "is-warn" : "is-ready";
+  const recommendation = getToolActionReadinessRecommendation(stats);
   return `
     <div class="tool-action-readiness ${readyTone}" aria-label="자동화 후보 준비 현황">
       <div class="tool-action-readiness-head">
         <strong>준비 현황</strong>
         <span>${stats.prepared}/${stats.total}개 준비 완료 · 준비 필요 ${stats.needsPrepare}개</span>
-        <button type="button" data-tool-action-bulk="copy-readiness-report">준비 리포트 복사</button>
+        <div class="tool-action-readiness-actions">
+          <button type="button" data-tool-action-bulk="copy-readiness-report">리포트 복사</button>
+          <button type="button" data-tool-action-bulk="download-readiness-report">Markdown 저장</button>
+        </div>
       </div>
       <div class="tool-action-readiness-stats">
         <span><strong>${stats.pending}</strong><em>승인 대기</em></span>
@@ -4144,12 +4161,29 @@ function renderToolActionReadinessSummary(actions = []) {
         <span><strong>${stats.templates}</strong><em>템플릿</em></span>
         <span><strong>${stats.externalExecution}</strong><em>외부 실행 기록</em></span>
       </div>
+      <p class="tool-action-readiness-next">${escapeHtml(recommendation)}</p>
     </div>
   `;
 }
 
+function getToolActionReadinessRecommendation(stats = {}) {
+  if (!stats.total) return "자동화 후보가 없습니다. 먼저 업무 목표를 입력해 후보를 생성하세요.";
+  if (stats.needsPrepare) {
+    return "추천 다음 액션: 안전 준비 전체 실행으로 승인, 리허설, 실행 점검, 할 일판 등록, 템플릿 저장을 한 번에 정리하세요.";
+  }
+  if (stats.blocked && !stats.externalExecution) {
+    return "추천 다음 액션: 외부 실행 차단은 현재 안전 정책상 정상입니다. 실제 캘린더/메일/드라이브 쓰기는 커넥터 연결 후 별도 승인으로 열어 주세요.";
+  }
+  if (stats.prepared === stats.total) {
+    return "추천 다음 액션: 준비가 완료됐습니다. 할 일판의 자동화 후보 업무를 처리하고 저장된 템플릿을 반복 업무에 재사용하세요.";
+  }
+  if (stats.pending) return "추천 다음 액션: 승인 대기 후보를 먼저 검토한 뒤 안전 준비를 이어가세요.";
+  return "추천 다음 액션: 후보 상세를 열어 리허설 결과와 실행 차단 사유를 확인하세요.";
+}
+
 function buildToolActionReadinessReport(actions = []) {
   const stats = getToolActionReadinessStats(actions);
+  const recommendation = getToolActionReadinessRecommendation(stats);
   const lines = [
     "# 자동화 후보 준비 리포트",
     "",
@@ -4164,6 +4198,7 @@ function buildToolActionReadinessReport(actions = []) {
     `- 할 일판 연결: ${stats.boardTasks}개`,
     `- 템플릿 저장: ${stats.templates}개`,
     `- 외부 실행 기록: ${stats.externalExecution}개`,
+    `- 추천 다음 액션: ${recommendation.replace(/^추천 다음 액션:\s*/, "")}`,
     "",
     "## 후보별 상태",
     "",

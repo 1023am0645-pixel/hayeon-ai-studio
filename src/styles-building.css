@@ -7129,9 +7129,15 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 850;
 }
 
-.tool-action-readiness-head button {
-  min-height: 28px;
+.tool-action-readiness-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-left: auto;
+}
+
+.tool-action-readiness-actions button {
+  min-height: 28px;
   padding: 5px 9px;
   color: #2b536a;
   background: rgba(255, 255, 255, 0.86);
@@ -7142,8 +7148,8 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   cursor: pointer;
 }
 
-.tool-action-readiness-head button:hover,
-.tool-action-readiness-head button:focus-visible {
+.tool-action-readiness-actions button:hover,
+.tool-action-readiness-actions button:focus-visible {
   color: #173448;
   background: rgba(228, 246, 255, 0.94);
   outline: none;
@@ -7179,6 +7185,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tool-action-readiness-next {
+  margin: 0;
+  padding: 8px 9px;
+  color: #28495a;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(63, 126, 168, 0.10);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.5;
 }
 
 .tool-action-bulk-actions button {
@@ -7856,9 +7874,13 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .tool-action-readiness-head button {
+  .tool-action-readiness-actions {
     width: 100%;
     margin-left: 0;
+  }
+
+  .tool-action-readiness-actions button {
+    flex: 1 1 auto;
   }
 
   .tool-action-outcomes span {
