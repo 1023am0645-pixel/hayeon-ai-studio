@@ -1464,6 +1464,7 @@ function renderAutomationOps() {
       <strong>자동화 운영 상태</strong>
       <div class="automation-ops-actions">
         <button type="button" data-automation-ops-action="copy-connector-checklist">설정 체크리스트 복사</button>
+        <button type="button" data-automation-ops-action="copy-setup-commands">설정 명령 복사</button>
         <button type="button" data-automation-ops-action="download-ops-report">운영 리포트 저장</button>
         <button type="button" id="refreshAutomationOpsButton">새로고침</button>
       </div>
@@ -1708,6 +1709,15 @@ async function handleAutomationOpsAction(event) {
       buildAutomationOpsReport()
     );
     showToast("자동화 운영 리포트를 Markdown으로 저장했습니다.");
+    return;
+  }
+  if (action === "copy-setup-commands") {
+    try {
+      await copyTextToClipboard(buildAutomationSetupCommands());
+      showToast("Cloudflare 설정 명령 초안을 복사했습니다.");
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 설정 명령을 복사하지 못했습니다.");
+    }
   }
 }
 
@@ -1747,6 +1757,68 @@ function buildAutomationConnectorChecklist() {
     `- 메모: ${background.note || "Queue/Cron 연결 전까지 브라우저 중심 실행과 서버 저장만 사용합니다."}`
   );
   return lines.join("\n");
+}
+
+function buildAutomationSetupCommands() {
+  const config = getAutomationDeploymentConfig();
+  const connectorStatus = automationConnectorStatus ?? {};
+  const tools = connectorStatus.tools ?? {};
+  const health = automationHealthStatus ?? {};
+  const summary = health.storageSummary && typeof health.storageSummary === "object"
+    ? health.storageSummary
+    : null;
+  const missingSecrets = ["calendar", "mail", "drive", "notion"]
+    .flatMap((key) => getAutomationConnectorMissingSecrets(tools[key] ?? {}));
+  const uniqueMissingSecrets = [...new Set(missingSecrets)].sort();
+  const needsMigration = health.storage !== "d1" || !summary || Number(summary.missingTables ?? 0) > 0 || Number(summary.errorTables ?? 0) > 0;
+  const lines = [
+    "# HA:YEON AI STUDIO Cloudflare 설정 명령 초안",
+    "# 실제 secret 값은 터미널 프롬프트가 뜰 때 직접 입력하세요. 이 문서에 값을 적지 마세요.",
+    "",
+    "# 1) 현재 연결 확인",
+    `npx wrangler whoami`,
+    `npx wrangler d1 migrations list ${config.d1DatabaseName} --remote`,
+    "",
+    "# 2) D1 스키마 반영",
+  ];
+
+  if (needsMigration) {
+    lines.push(`npx wrangler d1 migrations apply ${config.d1DatabaseName} --remote`);
+  } else {
+    lines.push(`# D1 테이블이 준비된 것으로 감지됨: ${config.d1DatabaseName}`);
+    lines.push(`# 필요할 때만 실행: npx wrangler d1 migrations apply ${config.d1DatabaseName} --remote`);
+  }
+
+  lines.push("", "# 3) 누락된 커넥터 secret 입력");
+  if (uniqueMissingSecrets.length) {
+    uniqueMissingSecrets.forEach((secretName) => {
+      lines.push(`npx wrangler secret put ${secretName}`);
+    });
+  } else {
+    lines.push("# 현재 감지된 누락 secret 없음");
+  }
+
+  lines.push(
+    "",
+    "# 4) 배포와 health 확인",
+    `npx wrangler deploy`,
+    `curl -s https://${config.workerHost}/api/automation/health`,
+    "",
+    "# 5) 아직 자동 활성화하지 않을 항목",
+    "# Queue/Cron/외부 쓰기 실행은 승인 정책과 재시도/멱등성 점검 후 별도 단계에서 열어야 합니다."
+  );
+
+  return lines.join("\n").trimEnd() + "\n";
+}
+
+function getAutomationDeploymentConfig() {
+  return {
+    workerName: "hayeon-ai-studio",
+    workerHost: "hayeon-ai-studio.1023am0645.workers.dev",
+    d1Binding: "AGENT_DB",
+    d1DatabaseName: "hayeon-ai-studio-agent",
+    migrationsDir: "migrations",
+  };
 }
 
 function buildAutomationOpsReport() {
@@ -1810,6 +1882,11 @@ function buildAutomationOpsReport() {
     `- Cron: ${background.cronConfigured ? "ON" : "OFF"}`,
     `- 쓰기 허용: ${background.writeEnabled ? "ON" : "OFF"}`,
     `- 메모: ${background.note || "Queue/Cron 연결 전까지 브라우저 중심 실행과 서버 저장만 사용합니다."}`,
+    "",
+    "## 설정 명령 초안",
+    "```bash",
+    buildAutomationSetupCommands().trimEnd(),
+    "```",
     "",
     "## 최근 감사 로그"
   );
