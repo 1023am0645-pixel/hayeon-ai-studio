@@ -6402,6 +6402,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-policy-note,
 .automation-setup-guide,
 .automation-next-steps,
+.automation-task-item,
 .automation-audit-item,
 .admin-automation-status {
   min-width: 0;
@@ -6752,6 +6753,69 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-background-card em.is-off {
   color: #8a4c2b;
   background: rgba(255, 231, 204, 0.90);
+}
+
+.automation-task-list {
+  display: grid;
+  gap: 7px;
+}
+
+.automation-task-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
+.automation-task-item span {
+  align-self: start;
+  padding: 2px 7px;
+  color: #6a451e;
+  background: rgba(255, 236, 184, 0.82);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.automation-task-item.is-doing span,
+.automation-task-item.is-review span {
+  color: #1f5c7b;
+  background: rgba(207, 238, 255, 0.86);
+}
+
+.automation-task-item.is-done span {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.90);
+}
+
+.automation-task-item strong,
+.automation-task-item p,
+.automation-task-item em {
+  min-width: 0;
+}
+
+.automation-task-item strong {
+  overflow: hidden;
+  color: #263f34;
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-task-item p {
+  grid-column: 2;
+  margin: 0;
+  color: rgba(37, 72, 59, 0.70);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.automation-task-item em {
+  grid-column: 2;
+  color: rgba(37, 72, 59, 0.48);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .automation-audit-list {

@@ -33,6 +33,7 @@ let automationConnectorStatus = null;
 let automationHealthStatus = null;
 let automationOpsWarning = "";
 let remoteAuditEvents = [];
+let remoteOpsTasks = [];
 let automationOpsRefreshTimer = 0;
 let remoteToolActionsLoading = false;
 let remoteToolActionsLoadedRunId = "";
@@ -1435,16 +1436,20 @@ async function loadAutomationOps({ force = false } = {}) {
   renderAutomationOpsMessage("자동화 운영 상태를 불러오는 중입니다...");
   renderAdminAutomationStatus("자동화 서버 상태를 확인하는 중입니다.");
   try {
-    const [healthResult, connectorResult, auditResult] = await Promise.allSettled([
+    const [healthResult, connectorResult, auditResult, taskResult] = await Promise.allSettled([
       automationStore.getHealth ? automationStore.getHealth() : Promise.resolve(null),
       automationStore.getConnectors(),
       automationStore.listAuditEvents({ limit: 8 }),
+      automationStore.listTasks ? automationStore.listTasks({ limit: 8 }) : Promise.resolve({ tasks: [] }),
     ]);
     if (connectorResult.status === "rejected") throw connectorResult.reason;
     automationHealthStatus = healthResult.status === "fulfilled" ? (healthResult.value ?? null) : null;
     automationConnectorStatus = connectorResult.value ?? null;
     remoteAuditEvents = auditResult.status === "fulfilled" && Array.isArray(auditResult.value?.events)
       ? auditResult.value.events
+      : [];
+    remoteOpsTasks = taskResult.status === "fulfilled" && Array.isArray(taskResult.value?.tasks)
+      ? taskResult.value.tasks.map(hydrateRemoteTask).filter((task) => task.id && task.title).slice(0, 8)
       : [];
     automationOpsWarning = "";
     if (auditResult.status === "rejected") {
@@ -1453,6 +1458,8 @@ async function loadAutomationOps({ force = false } = {}) {
         : "최근 감사 로그를 불러오지 못했습니다.";
     } else if (healthResult.status === "rejected") {
       automationOpsWarning = "자동화 health 상태를 확인하지 못했습니다.";
+    } else if (taskResult.status === "rejected") {
+      automationOpsWarning = "최근 자동화 업무를 불러오지 못했습니다.";
     }
     syncAutomationPolicyFromConnectorStatus(automationConnectorStatus);
     automationOpsLoaded = true;
@@ -1528,6 +1535,7 @@ function renderAutomationOps() {
   const connectorRows = ["calendar", "mail", "drive", "notion"]
     .map((key) => renderAutomationConnectorCard(key, tools[key] ?? {}))
     .join("");
+  const taskRows = renderAutomationTaskRows(remoteOpsTasks);
   const auditRows = renderAutomationAuditRows(remoteAuditEvents);
   const setupGuide = renderAutomationConnectorSetupGuide(tools, background);
   const nextSteps = renderAutomationOpsNextSteps(automationHealthStatus, tools, background, policy);
@@ -1563,6 +1571,11 @@ function renderAutomationOps() {
       <p>${escapeHtml(policy.note || "외부 도구 쓰기는 명시 승인 후 단계적으로 열어갑니다.")}</p>
     </div>
     ${nextSteps}
+    <div class="automation-audit-head">
+      <strong>최근 자동화 업무</strong>
+      <span>${remoteOpsTasks.length ? `${remoteOpsTasks.length}건` : "기록 없음"}</span>
+    </div>
+    ${taskRows || "<p class=\"automation-ops-empty\">아직 서버에 저장된 자동화 업무가 없습니다.</p>"}
     <div class="automation-audit-head">
       <strong>최근 감사 로그</strong>
       <span>${remoteAuditEvents.length ? `${remoteAuditEvents.length}건` : "기록 없음"}</span>
@@ -1768,6 +1781,39 @@ function scheduleAutomationOpsRefresh() {
     loadAutomationOps({ force: true });
     loadRemoteToolActionsForCurrentRun({ force: true });
   }, 700);
+}
+
+function renderAutomationTaskRows(tasks = []) {
+  if (!Array.isArray(tasks) || !tasks.length) return "";
+  return `
+    <div class="automation-task-list">
+      ${tasks.map((task) => {
+        const employee = getEmployee(task.assigneeId);
+        const meta = [
+          employee?.name || task.assigneeId || "담당 미정",
+          task.priority ? `우선순위 ${getPriorityLabel(task.priority)}` : "",
+          formatRemoteDate(task.updatedAt || task.createdAt),
+        ].filter(Boolean).join(" · ");
+        return `
+          <article class="automation-task-item is-${escapeHtml(task.status || "todo")}">
+            <span>${escapeHtml(getTaskStatusLabel(task))}</span>
+            <strong>${escapeHtml(task.title || "자동화 업무")}</strong>
+            <p>${escapeHtml(task.orchestrationGoal || getTaskSourceLabel(task) || "세부 설명 없음")}</p>
+            <em>${escapeHtml(meta)}</em>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function getPriorityLabel(priority = "") {
+  return {
+    high: "높음",
+    medium: "중간",
+    normal: "보통",
+    low: "낮음",
+  }[priority] ?? priority;
 }
 
 function renderAutomationAuditRows(events = []) {
@@ -2042,6 +2088,25 @@ function buildAutomationOpsReport() {
     `- Cron: ${background.cronConfigured ? "ON" : "OFF"}`,
     `- 쓰기 허용: ${background.writeEnabled ? "ON" : "OFF"}`,
     `- 메모: ${background.note || "Queue/Cron 연결 전까지 브라우저 중심 실행과 서버 저장만 사용합니다."}`,
+    "",
+    "## 최근 자동화 업무"
+  );
+
+  if (remoteOpsTasks.length) {
+    remoteOpsTasks.slice(0, 8).forEach((task) => {
+      const employee = getEmployee(task.assigneeId);
+      const meta = [
+        getTaskStatusLabel(task),
+        employee?.name || task.assigneeId || "담당 미정",
+        formatRemoteDate(task.updatedAt || task.createdAt),
+      ].filter(Boolean).join(" · ");
+      lines.push(`- ${task.title || "자동화 업무"} · ${meta}`);
+    });
+  } else {
+    lines.push("- 저장된 자동화 업무가 없습니다.");
+  }
+
+  lines.push(
     "",
     "## 설정 명령 초안",
     "```bash",
@@ -5688,6 +5753,7 @@ function resetAutomationOpsCache() {
   automationHealthStatus = null;
   automationOpsWarning = "";
   remoteAuditEvents = [];
+  remoteOpsTasks = [];
   renderAutomationOps();
   renderAdminAutomationStatus();
 }
