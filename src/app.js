@@ -1795,12 +1795,17 @@ function renderAutomationTaskRows(tasks = []) {
           formatRemoteDate(task.updatedAt || task.createdAt),
         ].filter(Boolean).join(" · ");
         return `
-          <article class="automation-task-item is-${escapeHtml(task.status || "todo")}">
+          <button
+            class="automation-task-item is-${escapeHtml(task.status || "todo")}"
+            type="button"
+            data-automation-task-id="${escapeHtml(task.id)}"
+            title="할 일판에서 열기"
+          >
             <span>${escapeHtml(getTaskStatusLabel(task))}</span>
             <strong>${escapeHtml(task.title || "자동화 업무")}</strong>
             <p>${escapeHtml(task.orchestrationGoal || getTaskSourceLabel(task) || "세부 설명 없음")}</p>
             <em>${escapeHtml(meta)}</em>
-          </article>
+          </button>
         `;
       }).join("")}
     </div>
@@ -1891,6 +1896,36 @@ function bindAutomationOpsRefreshButton() {
   refs.automationOps?.querySelectorAll("[data-automation-ops-action]").forEach((button) => {
     button.addEventListener("click", handleAutomationOpsAction);
   });
+  refs.automationOps?.querySelectorAll("[data-automation-task-id]").forEach((button) => {
+    button.addEventListener("click", handleAutomationOpsTaskOpen);
+  });
+}
+
+function handleAutomationOpsTaskOpen(event) {
+  const taskId = event.currentTarget?.dataset?.automationTaskId ?? "";
+  if (!taskId) return;
+  const task = ensureAutomationOpsTaskInLocalState(taskId);
+  if (!task) {
+    showToast("열 수 있는 자동화 업무를 찾지 못했습니다.");
+    return;
+  }
+  renderKanban();
+  openTaskDrawer();
+  openTaskDetailModal(task.id);
+  showToast("자동화 업무를 할 일판에서 열었습니다.");
+}
+
+function ensureAutomationOpsTaskInLocalState(taskId = "") {
+  const existing = getTask(taskId);
+  if (existing) return existing;
+  const remoteTask = remoteOpsTasks.find((task) => task.id === taskId);
+  if (!remoteTask) return null;
+  state.tasks = Array.isArray(state.tasks) ? state.tasks : [];
+  state.tasks.unshift(remoteTask);
+  state.tasks.sort((a, b) => getTaskSortTime(b) - getTaskSortTime(a));
+  syncEmployeeStatusFromActiveTasks();
+  saveState();
+  return getTask(taskId) ?? remoteTask;
 }
 
 async function handleAutomationOpsAction(event) {

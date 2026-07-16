@@ -6764,6 +6764,23 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 8px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.automation-task-item:hover,
+.automation-task-item:focus-visible {
+  background: rgba(246, 255, 250, 0.88);
+  border-color: rgba(77, 151, 126, 0.26);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .automation-task-item span {
