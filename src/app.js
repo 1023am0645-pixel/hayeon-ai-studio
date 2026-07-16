@@ -3824,6 +3824,119 @@ function buildToolActionSafetySummary(action = {}) {
   };
 }
 
+function getToolActionRequiredConnector(actionType = "") {
+  return {
+    calendar_event: "calendar",
+    email_draft: "mail",
+    file_folder: "drive",
+    document_draft: "drive",
+    checklist: "",
+    automation_recipe: "",
+  }[actionType] ?? "";
+}
+
+function getToolActionConnectorLabel(connector = "") {
+  return {
+    calendar: "Calendar",
+    mail: "Mail",
+    drive: "Drive",
+  }[connector] ?? "내부";
+}
+
+function getToolActionExecutionGate(action = {}) {
+  const policy = normalizeAutomationPolicy(state.automationPolicy);
+  const requiredConnector = getToolActionRequiredConnector(action.actionType);
+  const connector = requiredConnector ? (policy.connectors?.[requiredConnector] ?? {}) : null;
+  const connectorConnected = requiredConnector ? Boolean(connector.connected) : Boolean(policy.connectorReady);
+  const writeEnabled = requiredConnector ? Boolean(connector.writeEnabled) : Boolean(policy.connectorReady);
+  const externalAllowed = Boolean(policy.externalExecution && (requiredConnector ? writeEnabled : policy.connectorReady));
+  const blocker = policy.externalExecution
+    ? (externalAllowed ? "" : `${requiredConnector || "external"}_connector_missing`)
+    : "external_execution_disabled";
+  return {
+    requiredConnector,
+    connectorLabel: getToolActionConnectorLabel(requiredConnector),
+    connectorConnected,
+    writeEnabled,
+    externalAllowed,
+    blocker,
+    policyMode: policy.mode,
+  };
+}
+
+function getToolActionNextStepLabel(action = {}, { boardTask = null, savedTemplate = null } = {}) {
+  const status = normalizeToolActionStatus(action.status);
+  if (status === "rejected" || status === "cancelled") return "보류됨 · 다시 진행하려면 새 후보를 생성하세요.";
+  if (status === "pending") return "다음 버튼: 승인";
+  if (!action.metadata?.dryRun) return "다음 버튼: 리허설";
+  if (status === "approved" && !action.metadata?.executionAttempt) return "다음 버튼: 실행 점검";
+  if (["approved", "executed"].includes(status) && !boardTask) return "다음 버튼: 할 일판 등록";
+  if (["approved", "executed"].includes(status) && !savedTemplate) return "다음 버튼: 템플릿 저장";
+  return "준비 완료 · 할 일판과 템플릿에서 이어서 처리";
+}
+
+function renderToolActionPreparationChecklist(action = {}, { boardTask = null, savedTemplate = null } = {}) {
+  const status = normalizeToolActionStatus(action.status);
+  const dryRun = action.metadata?.dryRun;
+  const executionAttempt = action.metadata?.executionAttempt;
+  const gate = getToolActionExecutionGate(action);
+  const isApproved = ["approved", "executed"].includes(status);
+  const items = [
+    {
+      tone: isApproved ? "ready" : status === "rejected" ? "blocked" : "wait",
+      label: "승인",
+      value: isApproved ? "완료" : status === "rejected" ? "보류" : "대기",
+    },
+    {
+      tone: dryRun ? "ready" : "wait",
+      label: "리허설",
+      value: dryRun ? getToolActionDryRunMode(dryRun) : "미실행",
+    },
+    {
+      tone: gate.externalAllowed ? "ready" : "safe",
+      label: gate.requiredConnector ? gate.connectorLabel : "내부",
+      value: gate.externalAllowed
+        ? "쓰기 가능"
+        : gate.writeEnabled
+          ? "정책 차단"
+          : gate.connectorConnected
+            ? "쓰기 꺼짐"
+            : "외부 전송 없음",
+    },
+    {
+      tone: executionAttempt ? (executionAttempt.ok ? "ready" : "safe") : "wait",
+      label: "실행 점검",
+      value: executionAttempt
+        ? (executionAttempt.ok ? "완료" : getToolActionBlockerLabel(executionAttempt.code || executionAttempt.package?.blocker))
+        : "점검 전",
+    },
+    {
+      tone: boardTask ? "ready" : "wait",
+      label: "할 일판",
+      value: boardTask ? getTaskStatusLabel(boardTask) : "미등록",
+    },
+    {
+      tone: savedTemplate ? "ready" : "wait",
+      label: "템플릿",
+      value: savedTemplate ? "저장됨" : "미저장",
+    },
+  ];
+  const nextStep = getToolActionNextStepLabel(action, { boardTask, savedTemplate });
+  return `
+    <div class="tool-action-preflight" aria-label="자동화 후보 실행 전 준비 상태">
+      <div class="tool-action-preflight-items">
+        ${items.map((item) => `
+          <span class="is-${escapeHtml(item.tone)}">
+            <strong>${escapeHtml(item.label)}</strong>
+            <em>${escapeHtml(item.value)}</em>
+          </span>
+        `).join("")}
+      </div>
+      <p>${escapeHtml(nextStep)}</p>
+    </div>
+  `;
+}
+
 function extractDryRunLines(text = "", limit = 5) {
   const lines = String(text || "")
     .split(/\n|(?:^|\s)[-*]\s+/)
@@ -4652,6 +4765,7 @@ function buildToolActionReadinessReport(actions = []) {
       `- 할 일판: ${boardTask ? `${boardTask.title} · ${getTaskStatusLabel(boardTask)}` : "미등록"}`,
       `- 템플릿: ${savedTemplate ? `${savedTemplate.label} · ${savedTemplate.desc}` : "미저장"}`,
       `- 외부 실행: ${action.metadata?.externalExecution ? "기록 있음" : "없음"}`,
+      `- 추천 조치: ${getToolActionNextStepLabel(action, { boardTask, savedTemplate }).replace(/^다음 버튼:\s*/, "")}`,
       "",
     );
   });
@@ -4689,6 +4803,7 @@ function renderToolActions(actions = []) {
     const executionAttempt = action.metadata?.executionAttempt;
     const savedTemplate = getToolActionSavedTemplate(action);
     const outcomeBadges = renderToolActionOutcomeBadges(action, { boardTask, savedTemplate });
+    const preflight = renderToolActionPreparationChecklist(action, { boardTask, savedTemplate });
     const resultPreview = renderToolActionResultPreview(action);
     return `
       <article class="tool-action-card is-${escapeHtml(status)}${dryRun ? " has-dry-run" : ""}">
@@ -4702,6 +4817,7 @@ function renderToolActions(actions = []) {
           ${savedTemplate ? `<small class="is-template">템플릿 저장됨</small>` : ""}
         </div>
         <em>${escapeHtml(getToolActionStatusLabel(status))}</em>
+        ${preflight}
         ${outcomeBadges}
         ${resultPreview}
         <div class="tool-action-controls">
