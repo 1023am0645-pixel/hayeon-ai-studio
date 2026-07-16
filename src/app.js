@@ -36,6 +36,7 @@ let remoteAuditEvents = [];
 let remoteOpsTasks = [];
 let remoteOpsRuns = [];
 let automationOpsRefreshTimer = 0;
+let automationOpsReportPreviewOpen = false;
 let remoteToolActionsLoading = false;
 let remoteToolActionsLoadedRunId = "";
 let toolActionBulkRunning = false;
@@ -319,6 +320,7 @@ function getInitialState() {
     theme: getStoredTheme(),
     automationPolicy: getDefaultAutomationPolicy(),
     automationTemplates: [],
+    automationHiddenRecommendations: [],
   };
 }
 
@@ -340,6 +342,7 @@ function loadState() {
       theme: normalizeTheme(parsed.theme ?? getStoredTheme()),
       automationPolicy: normalizeAutomationPolicy(parsed.automationPolicy),
       automationTemplates: hydrateAutomationTemplates(parsed.automationTemplates),
+      automationHiddenRecommendations: hydrateAutomationHiddenRecommendations(parsed.automationHiddenRecommendations),
       employees: hydrateEmployees(parsed.employees),
       tasks: hydrateTasks(parsed.tasks),
       chat: hydrateChat(parsed.chat),
@@ -366,6 +369,11 @@ function hydrateAutomationTemplates(templates = []) {
     }))
     .filter((template) => template.goal)
     .slice(0, 16);
+}
+
+function hydrateAutomationHiddenRecommendations(items = []) {
+  if (!Array.isArray(items)) return [];
+  return [...new Set(items.map((item) => String(item || "").slice(0, 180)).filter(Boolean))].slice(0, 80);
 }
 
 function getInitialOrchState() {
@@ -1597,6 +1605,15 @@ function renderOrchestrationHistory(runs) {
           <em>${escapeHtml(meta || "기록 정보 없음")}</em>
         </button>
         <div class="orch-history-actions" aria-label="실행 기록 작업">
+          ${quality.needsReview ? `
+            <button
+              class="orch-history-repair"
+              type="button"
+              data-orch-run-action="repair-rerun"
+              data-orch-run-id="${escapeHtml(run.id)}"
+              title="오류와 검토 항목을 반영해 수정 후 재실행"
+            >수정 재실행</button>
+          ` : ""}
           <button
             class="orch-history-template"
             type="button"
@@ -1760,6 +1777,7 @@ function renderAutomationOps() {
   const setupGuide = renderAutomationConnectorSetupGuide(tools, background);
   const nextSteps = renderAutomationOpsNextSteps(automationHealthStatus, tools, background, policy);
   const sourceInsights = renderAutomationRunSourceInsights(remoteOpsRuns);
+  const reportPreview = renderAutomationOpsReportPreview();
 
   refs.automationOps.innerHTML = `
     <div class="automation-ops-head">
@@ -1767,6 +1785,8 @@ function renderAutomationOps() {
       <div class="automation-ops-actions">
         <button type="button" data-automation-ops-action="copy-connector-checklist">설정 체크리스트 복사</button>
         <button type="button" data-automation-ops-action="copy-setup-commands">설정 명령 복사</button>
+        <button type="button" data-automation-ops-action="copy-ops-report">리포트 복사</button>
+        <button type="button" data-automation-ops-action="toggle-ops-report-preview">${automationOpsReportPreviewOpen ? "리포트 닫기" : "리포트 미리보기"}</button>
         <button type="button" data-automation-ops-action="download-ops-report">운영 리포트 저장</button>
         <button type="button" id="refreshAutomationOpsButton">새로고침</button>
       </div>
@@ -1793,6 +1813,7 @@ function renderAutomationOps() {
     </div>
     ${nextSteps}
     ${sourceInsights}
+    ${reportPreview}
     <div class="automation-audit-head">
       <strong>최근 자동화 업무</strong>
       <span>${remoteOpsTasks.length ? `${remoteOpsTasks.length}건` : "기록 없음"}</span>
@@ -1805,6 +1826,21 @@ function renderAutomationOps() {
     ${auditRows || "<p class=\"automation-ops-empty\">아직 저장된 자동화 감사 로그가 없습니다.</p>"}
   `;
   bindAutomationOpsRefreshButton();
+}
+
+function renderAutomationOpsReportPreview() {
+  if (!automationOpsReportPreviewOpen) return "";
+  const report = buildAutomationOpsReport();
+  const preview = report.length > 9000 ? `${report.slice(0, 9000)}\n\n...` : report;
+  return `
+    <div class="automation-ops-report-preview" aria-label="자동화 운영 리포트 미리보기">
+      <div class="automation-ops-report-head">
+        <strong>운영 리포트 미리보기</strong>
+        <span>${report.split("\n").length}줄</span>
+      </div>
+      <pre>${escapeHtml(preview)}</pre>
+    </div>
+  `;
 }
 
 function renderAutomationHealthCard(health = {}, warning = "") {
@@ -2076,7 +2112,16 @@ function getAutomationRunSourceStats(runs = []) {
   };
 }
 
-function getRecommendedAutomationTemplates(runs = [], { limit = 3 } = {}) {
+function isAutomationRecommendationHidden(key = "") {
+  const normalizedKey = String(key || "");
+  return Boolean(normalizedKey && hydrateAutomationHiddenRecommendations(state.automationHiddenRecommendations).includes(normalizedKey));
+}
+
+function getAutomationRecommendationTemplateId(key = "") {
+  return `recommendation-${String(key || "template").replace(/[^a-z0-9가-힣_-]+/gi, "-").slice(0, 96)}`.slice(0, 120);
+}
+
+function getRecommendedAutomationTemplates(runs = [], { limit = 3, includeHidden = false } = {}) {
   const repeatMap = new Map();
 
   runs.forEach((run) => {
@@ -2113,12 +2158,36 @@ function getRecommendedAutomationTemplates(runs = [], { limit = 3 } = {}) {
       avgCompletion: Math.round(item.totalCompletion / item.count),
       qualityLabel: item.errors ? "오류 점검" : item.needsReview ? "수정 후 재실행" : "반복 후보",
     }))
+    .filter((item) => includeHidden || !isAutomationRecommendationHidden(item.key))
     .sort((a, b) => {
       const aReady = a.errors || a.needsReview ? 0 : 1;
       const bReady = b.errors || b.needsReview ? 0 : 1;
       return bReady - aReady || b.count - a.count || b.avgCompletion - a.avgCompletion || b.avgScore - a.avgScore;
     })
     .slice(0, limit);
+}
+
+function findRecommendedAutomationTemplate(key = "") {
+  if (!key) return null;
+  return getRecommendedAutomationTemplates(remoteOpsRuns, { limit: 20, includeHidden: true })
+    .find((item) => item.key === key) ?? null;
+}
+
+function buildRecommendedAutomationTemplate(item = {}, { clone = false } = {}) {
+  const now = new Date().toISOString();
+  const id = clone
+    ? `${getAutomationRecommendationTemplateId(item.key)}-${Date.now()}`.slice(0, 120)
+    : getAutomationRecommendationTemplateId(item.key);
+  return {
+    id,
+    label: `${String(item.label || "반복 업무").slice(0, 54)} 템플릿`.slice(0, 80),
+    desc: `추천 후보 · ${Number(item.count ?? 0)}회 · 완료율 ${Number(item.avgCompletion ?? 0)}% · 품질 ${Number(item.avgScore ?? 0)}`.slice(0, 120),
+    goal: String(item.goal || item.label || "").slice(0, 4000),
+    artifactType: inferArtifactTypeFromText(String(item.goal || item.label || "")),
+    actionType: "automation_recipe",
+    createdAt: now,
+    sourceActionId: "",
+  };
 }
 
 function getAutomationRunQualityStats(runs = []) {
@@ -2151,10 +2220,58 @@ function getAutomationRunQualityStats(runs = []) {
   };
 }
 
+function getAutomationRunWorkTypeInfo(run = {}) {
+  const metadata = safeParseJson(run.metadata_json);
+  const artifactType = metadata.artifactType || inferArtifactTypeFromText(String(run.goal || ""));
+  const workTypes = {
+    "lecture-plan": { key: "lecture", label: "강의 준비" },
+    "review-summary": { key: "review", label: "강의 후기 정리" },
+    "ax-report": { key: "ax", label: "AX 보고서" },
+    "app-spec": { key: "app", label: "앱 기능 정리" },
+    "automation-template": { key: "automation", label: "자동화 템플릿" },
+  };
+  return workTypes[artifactType] ?? { key: "general", label: "일반 업무" };
+}
+
+function getAutomationWorkTypeStats(runs = []) {
+  const workMap = new Map();
+  runs.forEach((run) => {
+    const workType = getAutomationRunWorkTypeInfo(run);
+    const quality = getAutomationRunQuality(run);
+    const previous = workMap.get(workType.key) ?? {
+      key: workType.key,
+      label: workType.label,
+      count: 0,
+      totalCompletion: 0,
+      totalScore: 0,
+      needsReview: 0,
+      errors: 0,
+      artifacts: 0,
+    };
+    previous.count += 1;
+    previous.totalCompletion += quality.completionPercent;
+    previous.totalScore += quality.score;
+    if (quality.needsReview) previous.needsReview += 1;
+    previous.errors += quality.errorCount;
+    previous.artifacts += quality.artifactCount;
+    workMap.set(workType.key, previous);
+  });
+
+  const order = ["lecture", "review", "ax", "app", "automation", "general"];
+  return [...workMap.values()]
+    .map((item) => ({
+      ...item,
+      avgCompletion: Math.round(item.totalCompletion / item.count),
+      avgScore: Math.round(item.totalScore / item.count),
+    }))
+    .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key) || b.count - a.count);
+}
+
 function renderAutomationRunSourceInsights(runs = []) {
   if (!Array.isArray(runs) || !runs.length) return "";
   const stats = getAutomationRunSourceStats(runs);
   const qualityStats = getAutomationRunQualityStats(runs);
+  const workTypeStats = getAutomationWorkTypeStats(runs);
   const sourceLabels = {
     manual: "직접",
     scenario: "시나리오",
@@ -2180,6 +2297,19 @@ function renderAutomationRunSourceInsights(runs = []) {
         <span><strong>${qualityStats.toolActionCount}</strong><em>자동화 후보</em></span>
         <span><strong>${qualityStats.templateCount}</strong><em>템플릿</em></span>
       </div>
+      ${workTypeStats.length ? `
+        <div class="automation-worktype-scoreboard">
+          <strong>업무별 자동화 성과</strong>
+          <div>
+            ${workTypeStats.map((item) => `
+              <span class="${item.needsReview || item.errors ? "is-warn" : "is-good"}">
+                <strong>${escapeHtml(item.label)}</strong>
+                <em>${item.count}회 · 완료율 ${item.avgCompletion}% · 품질 ${item.avgScore}</em>
+              </span>
+            `).join("")}
+          </div>
+        </div>
+      ` : ""}
       ${stats.topRepeats.length ? `
         <ol>
           ${stats.topRepeats.map((item) => `
@@ -2198,6 +2328,12 @@ function renderAutomationRunSourceInsights(runs = []) {
               <li class="${item.needsReview || item.errors ? "is-warn" : "is-ready"}">
                 <strong>${escapeHtml(item.label || item.goal || "자동화 실행")}</strong>
                 <span>${item.count}회 · 완료율 ${item.avgCompletion}% · 품질 ${item.avgScore} · ${escapeHtml(item.qualityLabel)}</span>
+                <div class="automation-recommended-actions">
+                  <button type="button" data-recommended-template-action="run" data-recommendation-key="${escapeHtml(item.key)}">실행</button>
+                  <button type="button" data-recommended-template-action="edit" data-recommendation-key="${escapeHtml(item.key)}">수정</button>
+                  <button type="button" data-recommended-template-action="clone" data-recommendation-key="${escapeHtml(item.key)}">복제</button>
+                  <button type="button" data-recommended-template-action="hide" data-recommendation-key="${escapeHtml(item.key)}">숨김</button>
+                </div>
               </li>
             `).join("")}
           </ol>
@@ -2342,6 +2478,9 @@ function bindAutomationOpsRefreshButton() {
   refs.automationOps?.querySelectorAll("[data-automation-ops-action]").forEach((button) => {
     button.addEventListener("click", handleAutomationOpsAction);
   });
+  refs.automationOps?.querySelectorAll("[data-recommended-template-action]").forEach((button) => {
+    button.addEventListener("click", handleRecommendedAutomationTemplateAction);
+  });
   refs.automationOps?.querySelectorAll("[data-automation-task-id]").forEach((button) => {
     button.addEventListener("click", handleAutomationOpsTaskOpen);
   });
@@ -2435,6 +2574,20 @@ async function handleAutomationOpsAction(event) {
     }
     return;
   }
+  if (action === "copy-ops-report") {
+    try {
+      await copyTextToClipboard(buildAutomationOpsReport());
+      showToast("자동화 운영 리포트를 복사했습니다.");
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 운영 리포트를 복사하지 못했습니다.");
+    }
+    return;
+  }
+  if (action === "toggle-ops-report-preview") {
+    automationOpsReportPreviewOpen = !automationOpsReportPreviewOpen;
+    renderAutomationOps();
+    return;
+  }
   if (action === "download-ops-report") {
     downloadTextFile(
       makeOrchestrationFilename("hayeon-automation-ops-report"),
@@ -2450,6 +2603,46 @@ async function handleAutomationOpsAction(event) {
     } catch {
       showToast("브라우저 복사 권한이 막혀 설정 명령을 복사하지 못했습니다.");
     }
+  }
+}
+
+async function handleRecommendedAutomationTemplateAction(event) {
+  const button = event.currentTarget;
+  const action = button?.dataset?.recommendedTemplateAction ?? "";
+  const key = button?.dataset?.recommendationKey ?? "";
+  const recommendation = findRecommendedAutomationTemplate(key);
+  if (!recommendation) {
+    showToast("추천 템플릿 후보를 찾지 못했습니다.");
+    return;
+  }
+
+  const template = buildRecommendedAutomationTemplate(recommendation, { clone: action === "clone" });
+  if (action === "run") {
+    runAutomationTemplateNow(template);
+    return;
+  }
+  if (action === "edit") {
+    loadAutomationTemplateIntoGoal(template);
+    showToast("추천 템플릿을 입력창에 불러왔습니다. 수정 후 실행하세요.");
+    return;
+  }
+  if (action === "clone") {
+    const current = hydrateAutomationTemplates(state.automationTemplates);
+    state.automationTemplates = [template, ...current.filter((item) => item.id !== template.id)].slice(0, 16);
+    saveState();
+    syncRemoteAutomationTemplate(template);
+    renderOrchestrationTemplates();
+    showToast("추천 후보를 내 자동화 템플릿으로 복제했습니다.");
+    return;
+  }
+  if (action === "hide") {
+    state.automationHiddenRecommendations = hydrateAutomationHiddenRecommendations([
+      ...(state.automationHiddenRecommendations ?? []),
+      key,
+    ]);
+    saveState();
+    renderAutomationOps();
+    showToast("추천 후보를 숨겼습니다.");
   }
 }
 
@@ -2635,6 +2828,13 @@ function buildAutomationOpsReport() {
       lines.push(`${index + 1}. ${item.label || item.goal || "자동화 실행"} · ${item.count}회 · 완료율 ${item.avgCompletion}% · 품질 ${item.avgScore} · ${item.qualityLabel}`);
     });
     if (!qualityStats.recommendedTemplates.length) lines.push("- 추천할 반복 템플릿이 아직 없습니다.");
+
+    lines.push("", "### 업무별 자동화 성과");
+    const workTypeStats = getAutomationWorkTypeStats(remoteOpsRuns);
+    workTypeStats.forEach((item) => {
+      lines.push(`- ${item.label}: ${item.count}회 · 평균 완료율 ${item.avgCompletion}% · 평균 품질 ${item.avgScore}/100 · 점검 필요 ${item.needsReview}건 · 산출물 ${item.artifacts}건`);
+    });
+    if (!workTypeStats.length) lines.push("- 업무별 성과를 계산할 실행 기록이 없습니다.");
   } else {
     lines.push("- 최근 실행 기록을 불러오지 못했거나 기록이 없습니다.");
     lines.push("", "## 품질 요약", "- 최근 실행 기록이 없어 품질 요약을 계산하지 못했습니다.");
@@ -2745,6 +2945,10 @@ function handleOrchestrationHistoryClick(event) {
     rerunStoredOrchestrationRun(runId);
     return;
   }
+  if (control.dataset.orchRunAction === "repair-rerun") {
+    rerunStoredOrchestrationRun(runId, { repair: true });
+    return;
+  }
   if (control.dataset.orchRunAction === "template") {
     saveStoredRunAsAutomationTemplate(runId);
     return;
@@ -2780,7 +2984,7 @@ async function loadStoredOrchestrationRun(runId) {
   }
 }
 
-async function rerunStoredOrchestrationRun(runId) {
+async function rerunStoredOrchestrationRun(runId, options = {}) {
   if (!automationStore?.getRun || !runId || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
   try {
     const data = await automationStore.getRun(runId);
@@ -2791,19 +2995,46 @@ async function rerunStoredOrchestrationRun(runId) {
       return;
     }
     const metadata = safeParseJson(run.metadata_json);
-    refs.orchestrationGoal.value = goal;
+    const nextGoal = options.repair ? buildAutomationRunRepairGoal(run, data) : goal;
+    refs.orchestrationGoal.value = nextGoal;
     refs.orchestrationGoal.dataset.scenarioId = metadata.scenarioId ?? "";
     setPendingRunSource({
       type: "rerun",
-      label: "재실행",
+      label: options.repair ? "수정 재실행" : "재실행",
       sourceRunId: run.id ?? runId,
       rerunFromGoal: goal,
     });
     refs.orchestrationForm.requestSubmit();
-    showToast("이전 실행 목표로 다시 시작합니다.");
+    showToast(options.repair ? "검토 항목을 반영해 수정 재실행을 시작합니다." : "이전 실행 목표로 다시 시작합니다.");
   } catch (error) {
     showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "실행 기록을 다시 시작하지 못했습니다.");
   }
+}
+
+function buildAutomationRunRepairGoal(run = {}, data = {}) {
+  const quality = getAutomationRunQuality(run);
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const issueItems = items
+    .filter((item) => ["review", "error", "skipped"].includes(String(item.status ?? "")) || item.needs_review)
+    .slice(0, 8);
+  const issueLines = issueItems.length
+    ? issueItems.map((item, index) => {
+      const metadata = safeParseJson(item.metadata_json);
+      const status = getOrchestrationStatusLabel(item.status || (item.needs_review ? "review" : "queued"));
+      const reason = item.error_text || item.review_note || item.result_text || metadata.phase || "보완 사유 미기록";
+      return `${index + 1}. ${item.employee_name || item.employee_id || "담당자"} · ${status} · ${item.subtask || "세부 업무 없음"} · ${String(reason).slice(0, 180)}`;
+    })
+    : ["1. 이전 실행의 검토/오류 항목을 다시 점검하고 완료 기준을 더 명확하게 작성"];
+  return [
+    String(run.goal || "").trim(),
+    "",
+    "[수정 후 재실행 지시]",
+    `- 이전 품질: ${quality.label} ${quality.score}/100 · 완료율 ${quality.completionPercent}% · 검토 ${quality.reviewCount}건 · 오류 ${quality.errorCount}건`,
+    "- 목표: 오류/검토 항목을 먼저 보완하고, 산출물의 완료 기준과 다음 실행 조건을 더 명확하게 정리",
+    "- 우선 수정 항목:",
+    ...issueLines.map((line) => `  ${line}`),
+    "- 출력: 수정된 산출물, 남은 확인 사항, 다음 반복 실행 여부를 구분해서 작성",
+  ].join("\n").slice(0, 4000);
 }
 
 async function saveStoredRunAsAutomationTemplate(runId) {
@@ -4368,6 +4599,33 @@ async function attemptToolActionExecution(action = {}, options = {}) {
     return;
   }
 
+  const safety = buildToolActionSafetySummary(action);
+  if (safety.riskLevel === "high") {
+    const now = new Date().toISOString();
+    action.metadata = {
+      ...(action.metadata ?? {}),
+      executionAttempt: {
+        at: now,
+        ok: false,
+        status: "blocked",
+        code: "safety_review_required",
+        message: safety.note,
+        externalExecution: false,
+        package: null,
+      },
+      safeMode: true,
+      externalExecution: false,
+    };
+    action.updatedAt = now;
+    appendToolActionAuditLog(action, "executeBlocked");
+    updateRemoteToolAction(action);
+    saveState();
+    renderOrchestrationResults(buildStoredOrchestrationResult());
+    if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+    if (!options.silent) showToast("민감정보 점검이 필요해 실행 점검을 차단했습니다.");
+    return;
+  }
+
   if (automationStore?.executeToolAction && isAdminLoggedIn()) {
     try {
       const data = await automationStore.executeToolAction(action.id);
@@ -4646,6 +4904,11 @@ function buildToolActionSafetySummary(action = {}) {
     payload.contentPreview,
   ].filter(Boolean).join("\n");
   const hasContactPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\b01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}\b/i.test(content);
+  const hasSensitivePattern = /주민등록|계좌|비밀번호|패스워드|토큰|api\s*key|secret|개인정보|민감정보|주소|생년월일|카드번호|인증번호/i.test(content);
+  const hasExternalIntent = /발송|전송|공유|배포|게시|업로드|메일|이메일|캘린더|드라이브|노션|외부/i.test(content);
+  const hasAttachmentIntent = /첨부|파일|자료|링크|다운로드|업로드/i.test(content);
+  const hasFileNameRule = /파일명|저장 위치|폴더|드라이브|문서 제목|제목/i.test(content);
+  const needsRecipient = action.actionType === "email_draft" && !hasContactPattern;
   const typeNeeds = {
     calendar_event: "날짜·시간·참석자 확인",
     document_draft: "문서 제목·저장 위치 확인",
@@ -4658,15 +4921,28 @@ function buildToolActionSafetySummary(action = {}) {
     { label: "외부 전송", value: "차단됨", tone: "safe" },
     { label: "승인 상태", value: status === "pending" ? "승인 필요" : getToolActionStatusLabel(status), tone: status === "rejected" ? "warn" : "safe" },
     { label: "확인 필요", value: typeNeeds[action.actionType] ?? typeNeeds.document_draft, tone: "warn" },
+    { label: "개인정보", value: hasSensitivePattern ? "실행 차단" : "직접값 없음", tone: hasSensitivePattern ? "block" : "safe" },
     { label: "연락처 패턴", value: hasContactPattern ? "검토 필요" : "감지 안 됨", tone: hasContactPattern ? "warn" : "safe" },
+    { label: "외부 공개", value: hasExternalIntent ? "공개 범위 확인" : "내부 초안", tone: hasExternalIntent ? "warn" : "safe" },
+    { label: "수신자", value: needsRecipient ? "누락 확인" : "확인 가능", tone: needsRecipient ? "warn" : "safe" },
+    { label: "첨부/링크", value: hasAttachmentIntent ? "첨부 확인" : "해당 없음", tone: hasAttachmentIntent ? "warn" : "safe" },
+    { label: "파일명", value: hasFileNameRule ? "규칙 확인" : "필요 시 지정", tone: hasFileNameRule ? "warn" : "safe" },
   ];
-  return {
-    riskLevel: hasContactPattern ? "medium" : "low",
-    riskLabel: hasContactPattern ? "주의 필요" : "낮음",
-    checks,
-    note: hasContactPattern
+  const isBlocked = checks.some((check) => check.tone === "block");
+  const warnCount = checks.filter((check) => check.tone === "warn").length;
+  const riskLevel = isBlocked ? "high" : (hasContactPattern || warnCount >= 3 ? "medium" : "low");
+  const note = isBlocked
+    ? "민감정보로 보이는 값이 있어 실행 점검을 차단했습니다. 값을 제거하거나 범위를 익명화한 뒤 다시 승인하세요."
+    : hasContactPattern
       ? "본문에 이메일 또는 전화번호로 보이는 값이 있어 실제 실행 전 수신자와 공개 범위를 확인해야 합니다."
-      : "현재 후보는 로컬 초안과 리허설만 생성하며, 외부 서비스로 자동 전송하지 않습니다.",
+      : warnCount >= 3
+        ? "외부 공개, 첨부, 파일명 등 확인 항목이 많습니다. 실제 실행 전 사람이 한 번 더 검토해야 합니다."
+        : "현재 후보는 로컬 초안과 리허설만 생성하며, 외부 서비스로 자동 전송하지 않습니다.";
+  return {
+    riskLevel,
+    riskLabel: isBlocked ? "실행 차단" : riskLevel === "medium" ? "주의 필요" : "낮음",
+    checks,
+    note,
   };
 }
 
@@ -5484,6 +5760,7 @@ function getToolActionBlockerLabel(code = "") {
   const labels = {
     external_execution_disabled: "외부 실행 꺼짐",
     external_connector_missing: "커넥터 미연결",
+    safety_review_required: "안전 검토 필요",
     calendar_connector_missing: "캘린더 쓰기 미설정",
     mail_connector_missing: "메일 쓰기 미설정",
     drive_connector_missing: "드라이브 쓰기 미설정",

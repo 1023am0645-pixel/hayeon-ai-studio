@@ -6365,6 +6365,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   background: rgba(239, 226, 255, 0.96);
 }
 
+.orch-history-actions .orch-history-repair {
+  color: #7a421f;
+  background: rgba(255, 231, 204, 0.86);
+  border-color: rgba(208, 128, 64, 0.20);
+}
+
+.orch-history-actions .orch-history-repair:hover,
+.orch-history-actions .orch-history-repair:focus-visible {
+  color: #5d2f13;
+  background: rgba(255, 219, 184, 0.96);
+}
+
 .orch-history-badges span {
   align-self: start;
   padding: 2px 7px;
@@ -6820,6 +6832,134 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-recommended-templates li.is-warn {
   border-color: rgba(216, 163, 68, 0.20);
   background: rgba(255, 244, 220, 0.74);
+}
+
+.automation-recommended-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.automation-recommended-actions button {
+  padding: 4px 7px;
+  color: #24483a;
+  font-size: 10px;
+  font-weight: 900;
+  background: rgba(232, 250, 240, 0.86);
+  border: 1px solid rgba(77, 151, 126, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.automation-recommended-actions button:hover,
+.automation-recommended-actions button:focus-visible {
+  color: #163629;
+  background: rgba(216, 246, 229, 0.96);
+  outline: none;
+}
+
+.automation-worktype-scoreboard {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(77, 151, 126, 0.10);
+  border-radius: 12px;
+}
+
+.automation-worktype-scoreboard > strong {
+  color: #243d32;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.automation-worktype-scoreboard > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.automation-worktype-scoreboard span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(77, 151, 126, 0.10);
+  border-radius: 10px;
+}
+
+.automation-worktype-scoreboard span.is-good {
+  background: rgba(231, 248, 238, 0.70);
+}
+
+.automation-worktype-scoreboard span.is-warn {
+  background: rgba(255, 244, 220, 0.74);
+}
+
+.automation-worktype-scoreboard strong,
+.automation-worktype-scoreboard em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-worktype-scoreboard span strong {
+  color: #25483b;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.automation-worktype-scoreboard span em {
+  color: rgba(37, 72, 59, 0.58);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.automation-ops-report-preview {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 252, 244, 0.88), rgba(244, 253, 248, 0.76)),
+    rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(77, 151, 126, 0.14);
+  border-radius: 13px;
+}
+
+.automation-ops-report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.automation-ops-report-head strong {
+  color: #243d32;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.automation-ops-report-head span {
+  color: rgba(37, 72, 59, 0.58);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.automation-ops-report-preview pre {
+  max-height: 280px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  color: #243d32;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(77, 151, 126, 0.10);
+  border-radius: 10px;
 }
 
 .automation-next-steps-head {
@@ -8554,6 +8694,11 @@ button.automation-audit-item:focus-visible {
   border-color: rgba(255, 217, 106, 0.30);
 }
 
+.orch-safety-summary.is-high {
+  background: rgba(255, 225, 220, 0.10);
+  border-color: rgba(255, 121, 105, 0.34);
+}
+
 .orch-safety-summary ul {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8591,6 +8736,10 @@ button.automation-audit-item:focus-visible {
 
 .orch-safety-summary li.is-warn em {
   color: #ffdf8a;
+}
+
+.orch-safety-summary li.is-block em {
+  color: #ff9f90;
 }
 
 .orch-safety-summary p {
@@ -8858,6 +9007,10 @@ body.is-app-expanded.floor-detail-active .workspace-stage {
   .automation-source-pills,
   .automation-quality-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .automation-worktype-scoreboard > div {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .orch-history-item {
