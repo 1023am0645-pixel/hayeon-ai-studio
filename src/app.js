@@ -34,6 +34,7 @@ let remoteAuditEvents = [];
 let automationOpsRefreshTimer = 0;
 let remoteToolActionsLoading = false;
 let remoteToolActionsLoadedRunId = "";
+let toolActionBulkRunning = false;
 let artifactLibraryFilters = {
   query: "",
   employeeId: "all",
@@ -173,8 +174,9 @@ const orchestrationTemplates = [
     artifactType: "lecture-plan",
     goal: [
       "다음 강의를 준비해줘.",
-      "강의 주제와 대상자를 기준으로 강의 흐름, 핵심 메시지, 실습 활동, PPT 구성, 리허설 체크리스트를 나눠서 정리해줘.",
-      "최종 결과는 바로 강의 준비 회의에 쓸 수 있게 액션 아이템 중심으로 만들어줘.",
+      "강의 주제와 대상자를 기준으로 60~90분 강의 흐름, 핵심 메시지, 15분 실습 활동, PPT 목차, 리허설 체크리스트를 분리해줘.",
+      "최종 결과는 강의 준비 회의에서 바로 읽을 수 있게 '강의 흐름안 → PPT 구성 → 리허설 점검 → 당일 준비물' 순서로 만들어줘.",
+      "정보가 부족한 날짜, 대상자, 장소, 준비물은 지어내지 말고 '확인 필요:'로 표시해줘.",
     ].join("\n"),
   },
   {
@@ -184,8 +186,9 @@ const orchestrationTemplates = [
     artifactType: "review-summary",
     goal: [
       "최근 강의 후기를 정리해줘.",
-      "참여자 반응, 인상적인 문장, 개선점, 다음 강의에 반영할 액션, 아카이브용 요약문을 직원별로 나눠 작성해줘.",
-      "후기는 홍보 문구와 내부 회고에 둘 다 재사용할 수 있게 정리해줘.",
+      "참여자 반응, 인상적인 문장, 반복 강점, 개선점, 다음 강의 반영 액션, 아카이브용 요약문을 직원별로 나눠 작성해줘.",
+      "후기는 '내부 회고용'과 '홍보 문구 후보'를 구분하고, 실제 후기 원문이 없으면 예시를 만들지 말고 필요한 원자료를 확인 필요로 남겨줘.",
+      "마지막에는 다음 강의에 반영할 수정 체크리스트를 3~5개로 정리해줘.",
     ].join("\n"),
   },
   {
@@ -195,8 +198,9 @@ const orchestrationTemplates = [
     artifactType: "ax-report",
     goal: [
       "AX-서포터즈 활동 보고서 초안을 만들어줘.",
-      "활동 개요, 주요 성과, 참여자 변화, 증빙 자료 체크리스트, 다음 액션, 제출용 요약문을 나눠 정리해줘.",
-      "보고서 문체는 공식 문서처럼 차분하게 작성해줘.",
+      "활동 개요, 공식과제/자율과제 진행 내용, 주요 성과, 참여자 변화, 증빙 자료 체크리스트, 다음 달 계획, 제출용 요약문을 나눠 정리해줘.",
+      "보고서 문체는 공식 문서처럼 차분하게 작성하고, 근거 없는 수치·링크·성과명은 만들지 말고 확인 필요로 표시해줘.",
+      "제출 전 검토자가 확인할 항목을 마지막 체크리스트로 붙여줘.",
     ].join("\n"),
   },
   {
@@ -206,8 +210,9 @@ const orchestrationTemplates = [
     artifactType: "app-spec",
     goal: [
       "새 앱 기능을 정리해줘.",
-      "사용자 문제, 핵심 기능, 첫 화면 흐름, 필요한 데이터, 우선순위, 개발 체크리스트를 직원별 역할에 맞춰 나눠줘.",
-      "개발자가 바로 작업 단위로 볼 수 있게 구체적인 항목으로 만들어줘.",
+      "사용자 문제, 핵심 기능, 첫 화면 흐름, 필요한 데이터, 우선순위, 예외 상태, 개발 체크리스트를 직원별 역할에 맞춰 나눠줘.",
+      "개발자가 바로 작업 단위로 볼 수 있게 '사용자 시나리오 → 화면 단위 → 데이터 → 검수 기준 → 다음 스프린트 작업' 순서로 만들어줘.",
+      "기능 욕심을 늘리기보다 MVP에서 반드시 필요한 화면과 보류할 기능을 구분해줘.",
     ].join("\n"),
   },
   {
@@ -217,8 +222,9 @@ const orchestrationTemplates = [
     artifactType: "automation-template",
     goal: [
       "반복 업무 자동화 템플릿을 만들어줘.",
-      "업무 시작 조건, 입력 정보, 처리 순서, 확인 기준, 예외 상황, 결과물 양식을 정리해줘.",
-      "비슷한 업무에 반복 적용할 수 있는 운영 템플릿 형태로 만들어줘.",
+      "업무 시작 조건, 입력 정보, 처리 순서, 출력물 양식, 확인 기준, 예외 상황, 승인 기준을 정리해줘.",
+      "강의 준비, 강의 후기 정리, AX 보고서, 앱 기능 정리처럼 비슷한 업무에 반복 적용할 수 있는 운영 템플릿 형태로 만들어줘.",
+      "자동 실행 전에 사람이 확인해야 할 항목과 외부 전송 금지 조건을 반드시 포함해줘.",
     ].join("\n"),
   },
 ];
@@ -2759,6 +2765,10 @@ function setToolActionDecision(action = {}, status = "approved") {
 }
 
 async function handleToolActionBulk(command = "") {
+  if (toolActionBulkRunning) {
+    showToast("자동화 후보 일괄 처리가 진행 중입니다.");
+    return;
+  }
   const actions = state.orch.toolActions ?? [];
 
   if (command === "approve-all") {
@@ -2767,15 +2777,20 @@ async function handleToolActionBulk(command = "") {
       showToast("승인 대기 중인 자동화 후보가 없습니다.");
       return;
     }
-    targets.forEach((action) => {
-      setToolActionDecision(action, "approved");
-      updateRemoteToolAction(action);
-    });
-    saveState();
-    renderOrchestrationResults(buildStoredOrchestrationResult());
-    const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
-    if (openAction) openToolActionPreview(openAction);
-    showToast(`${targets.length}개 자동화 후보를 승인했습니다.`);
+    toolActionBulkRunning = true;
+    try {
+      targets.forEach((action) => {
+        setToolActionDecision(action, "approved");
+        updateRemoteToolAction(action);
+      });
+      saveState();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
+      if (openAction) openToolActionPreview(openAction);
+      showToast(`${targets.length}개 자동화 후보를 승인했습니다.`);
+    } finally {
+      toolActionBulkRunning = false;
+    }
     return;
   }
 
@@ -2785,10 +2800,15 @@ async function handleToolActionBulk(command = "") {
       showToast("리허설할 자동화 후보가 없습니다.");
       return;
     }
-    for (const action of targets) {
-      await runToolActionDryRun(action, { silent: true });
+    toolActionBulkRunning = true;
+    try {
+      for (const action of targets) {
+        await runToolActionDryRun(action, { silent: true });
+      }
+      showToast(`${targets.length}개 자동화 후보 리허설을 완료했습니다.`);
+    } finally {
+      toolActionBulkRunning = false;
     }
-    showToast(`${targets.length}개 자동화 후보 리허설을 완료했습니다.`);
     return;
   }
 
@@ -2798,10 +2818,15 @@ async function handleToolActionBulk(command = "") {
       showToast("실행 점검할 승인 후보가 없습니다.");
       return;
     }
-    for (const action of targets) {
-      await attemptToolActionExecution(action, { silent: true });
+    toolActionBulkRunning = true;
+    try {
+      for (const action of targets) {
+        await attemptToolActionExecution(action, { silent: true });
+      }
+      showToast(`${targets.length}개 승인 후보 실행 점검을 완료했습니다.`);
+    } finally {
+      toolActionBulkRunning = false;
     }
-    showToast(`${targets.length}개 승인 후보 실행 점검을 완료했습니다.`);
   }
 }
 
@@ -3222,7 +3247,7 @@ function openToolActionPreview(action = {}) {
     </div>
     <section>
       <span>실행 방식</span>
-      <p>${escapeHtml("현재 단계에서는 캘린더·메일·드라이브 등 외부 서비스로 전송하지 않습니다. 아래 초안을 확인하고 복사하거나 완료 표시만 할 수 있습니다.")}</p>
+      <p>${escapeHtml("승인 전에는 외부 서비스로 전송하지 않습니다. 리허설과 실행 점검은 안전 모드로 실행 패키지만 만들고, 할 일판 등록·템플릿 저장은 내부 데이터로만 반영됩니다.")}</p>
     </section>
     <section>
       <span>원 지시</span>
@@ -3269,7 +3294,7 @@ function openToolActionPreview(action = {}) {
         <p>${escapeHtml([
           `상태: ${executionPackage.status === "ready" ? "실행 가능" : "차단됨"}`,
           `대상: ${executionPackage.targetApp || "확인 필요"}`,
-          `차단 사유: ${executionPackage.blocker || executionAttempt?.code || "없음"}`,
+          `차단 사유: ${getToolActionBlockerLabel(executionPackage.blocker || executionAttempt?.code || "")}`,
           executionAttempt?.message ? `메모: ${executionAttempt.message}` : "",
         ].filter(Boolean).join("\n"))}</p>
       </section>
@@ -3803,6 +3828,107 @@ function getToolActionStatusLabel(status) {
   return labels[status] ?? labels.pending;
 }
 
+function getToolActionBlockerLabel(code = "") {
+  const labels = {
+    external_execution_disabled: "외부 실행 꺼짐",
+    external_connector_missing: "커넥터 미연결",
+    calendar_connector_missing: "캘린더 쓰기 미설정",
+    mail_connector_missing: "메일 쓰기 미설정",
+    drive_connector_missing: "드라이브 쓰기 미설정",
+    adapter_missing: "어댑터 없음",
+    adapter_not_implemented: "실행 어댑터 미연결",
+  };
+  return labels[code] ?? (code ? code.replace(/_/g, " ") : "안전 정책 차단");
+}
+
+function getToolActionDryRunMode(dryRun = {}) {
+  const adapter = String(dryRun.adapter || "");
+  if (adapter.includes("worker")) return "서버 안전 모드";
+  if (adapter.includes("local")) return "로컬 안전 모드";
+  return "안전 모드";
+}
+
+function getToolActionPreviewText(text = "", maxLength = 180) {
+  const clean = String(text || "")
+    .split("\n")
+    .map((line) => line
+      .replace(/^#+\s*/, "")
+      .replace(/^\[[^\]]+\]$/, "")
+      .replace(/\s+/g, " ")
+      .trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" · ");
+  if (!clean) return "";
+  return clean.length > maxLength ? `${clean.slice(0, maxLength - 1).trim()}…` : clean;
+}
+
+function renderToolActionOutcomeBadges(action = {}, { boardTask = null, savedTemplate = null } = {}) {
+  const dryRun = action.metadata?.dryRun;
+  const executionAttempt = action.metadata?.executionAttempt;
+  const items = [];
+
+  if (dryRun) {
+    items.push({
+      tone: "safe",
+      label: "리허설",
+      value: `${getToolActionDryRunMode(dryRun)} · 외부 전송 없음`,
+    });
+  }
+  if (executionAttempt) {
+    items.push({
+      tone: executionAttempt.ok ? "safe" : "warn",
+      label: "실행 점검",
+      value: executionAttempt.ok ? "완료" : getToolActionBlockerLabel(executionAttempt.code || executionAttempt.package?.blocker),
+    });
+  }
+  if (boardTask) {
+    items.push({
+      tone: "task",
+      label: "할 일판",
+      value: getTaskStatusLabel(boardTask),
+    });
+  }
+  if (savedTemplate) {
+    items.push({
+      tone: "template",
+      label: "템플릿",
+      value: "저장됨",
+    });
+  }
+  if (action.metadata?.safeMode) {
+    items.push({
+      tone: action.metadata?.externalExecution ? "warn" : "safe",
+      label: "안전",
+      value: action.metadata?.externalExecution ? "외부 실행 기록 있음" : "외부 전송 없음",
+    });
+  }
+
+  if (!items.length) return "";
+  return `
+    <div class="tool-action-outcomes" aria-label="자동화 후보 처리 결과">
+      ${items.map((item) => `
+        <span class="is-${escapeHtml(item.tone)}">
+          <strong>${escapeHtml(item.label)}</strong>
+          <em>${escapeHtml(item.value)}</em>
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderToolActionResultPreview(action = {}) {
+  const dryRun = action.metadata?.dryRun;
+  const executionAttempt = action.metadata?.executionAttempt;
+  const text = dryRun?.outputText
+    ? getToolActionPreviewText(dryRun.outputText)
+    : executionAttempt?.message
+      ? getToolActionPreviewText(executionAttempt.message)
+      : "";
+  if (!text) return "";
+  return `<p class="tool-action-result-preview">${escapeHtml(text)}</p>`;
+}
+
 function renderToolActions(actions = []) {
   if (!actions.length) return "";
   const pendingCount = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending").length;
@@ -3827,6 +3953,8 @@ function renderToolActions(actions = []) {
     const savedTemplate = action.metadata?.savedTemplateId
       ? hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === action.metadata.savedTemplateId)
       : null;
+    const outcomeBadges = renderToolActionOutcomeBadges(action, { boardTask, savedTemplate });
+    const resultPreview = renderToolActionResultPreview(action);
     return `
       <article class="tool-action-card is-${escapeHtml(status)}${dryRun ? " has-dry-run" : ""}">
         <div>
@@ -3839,6 +3967,8 @@ function renderToolActions(actions = []) {
           ${savedTemplate ? `<small class="is-template">템플릿 저장됨</small>` : ""}
         </div>
         <em>${escapeHtml(getToolActionStatusLabel(status))}</em>
+        ${outcomeBadges}
+        ${resultPreview}
         <div class="tool-action-controls">
           <button type="button" data-tool-action-control="preview" data-tool-action-id="${escapeHtml(action.id)}">미리보기</button>
           ${canDecide ? `

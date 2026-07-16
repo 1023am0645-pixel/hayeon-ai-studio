@@ -7233,6 +7233,75 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   background: rgba(218, 237, 255, 0.90);
 }
 
+.tool-action-outcomes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-action-outcomes span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 8px;
+  background: rgba(245, 250, 252, 0.82);
+  border: 1px solid rgba(63, 126, 168, 0.12);
+  border-radius: 999px;
+}
+
+.tool-action-outcomes strong,
+.tool-action-outcomes em {
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.tool-action-outcomes strong {
+  color: rgba(38, 61, 76, 0.72);
+  font-weight: 950;
+}
+
+.tool-action-outcomes em {
+  color: rgba(39, 63, 77, 0.78);
+  font-style: normal;
+  font-weight: 850;
+}
+
+.tool-action-outcomes .is-safe {
+  background: rgba(222, 249, 234, 0.82);
+  border-color: rgba(67, 150, 103, 0.16);
+}
+
+.tool-action-outcomes .is-warn {
+  background: rgba(255, 236, 213, 0.86);
+  border-color: rgba(191, 95, 54, 0.16);
+}
+
+.tool-action-outcomes .is-task {
+  background: rgba(255, 242, 204, 0.86);
+  border-color: rgba(189, 139, 43, 0.16);
+}
+
+.tool-action-outcomes .is-template {
+  background: rgba(239, 226, 255, 0.84);
+  border-color: rgba(137, 96, 172, 0.16);
+}
+
+.tool-action-result-preview {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 9px;
+  color: rgba(44, 65, 78, 0.76);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(63, 126, 168, 0.10);
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 .tool-action-card.has-dry-run {
   border-color: rgba(67, 150, 103, 0.24);
   box-shadow: inset 3px 0 0 rgba(67, 150, 103, 0.30);
@@ -7650,6 +7719,31 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 
   .orch-artifact-actions {
     justify-content: flex-start;
+  }
+
+  .automation-connector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-action-card {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-action-card > em {
+    justify-self: start;
+  }
+
+  .tool-action-bulk-actions button,
+  .tool-action-controls button {
+    flex: 1 1 auto;
+  }
+
+  .tool-action-bulk-actions em {
+    flex-basis: 100%;
+  }
+
+  .tool-action-outcomes span {
+    max-width: 100%;
   }
 }
 

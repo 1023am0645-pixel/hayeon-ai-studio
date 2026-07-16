@@ -284,6 +284,12 @@ function formatPackageOutput(pkg = {}) {
     "[실행 전 단계]",
     ...(pkg.steps ?? []).map((step, index) => `${index + 1}. ${step}`),
     "",
+    "[검수 기준]",
+    ...(pkg.checks ?? []).map((check) => `- ${check}`),
+    "",
+    "[주의]",
+    ...(pkg.warnings ?? []).map((warning) => `- ${warning}`),
+    "",
     "[패키지 미리보기]",
     preview,
   ].join("\n").trim();
