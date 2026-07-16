@@ -1403,15 +1403,27 @@ function renderOrchestrationHistory(runs) {
       errorCount ? `${errorCount} 오류` : "",
     ].filter(Boolean).join(" · ");
     return `
-      <button
+      <article
         class="orch-history-item is-${escapeHtml(status)}"
-        type="button"
-        data-orch-run-id="${escapeHtml(run.id)}"
       >
-        <span>${escapeHtml(statusLabel)}</span>
-        <strong>${escapeHtml(run.goal || "목표 없음")}</strong>
-        <em>${escapeHtml(meta || "기록 정보 없음")}</em>
-      </button>
+        <button
+          class="orch-history-main"
+          type="button"
+          data-orch-run-action="load"
+          data-orch-run-id="${escapeHtml(run.id)}"
+        >
+          <span>${escapeHtml(statusLabel)}</span>
+          <strong>${escapeHtml(run.goal || "목표 없음")}</strong>
+          <em>${escapeHtml(meta || "기록 정보 없음")}</em>
+        </button>
+        <button
+          class="orch-history-rerun"
+          type="button"
+          data-orch-run-action="rerun"
+          data-orch-run-id="${escapeHtml(run.id)}"
+          title="이 실행 목표로 다시 실행"
+        >다시 실행</button>
+      </article>
     `;
   }).join("");
 
@@ -2276,12 +2288,18 @@ function getAutomationAuditEventLabel(type) {
 }
 
 function handleOrchestrationHistoryClick(event) {
-  const item = event.target.closest("[data-orch-run-id]");
-  if (!item) return;
-  loadStoredOrchestrationRun(item.dataset.orchRunId);
+  const control = event.target.closest("[data-orch-run-action]");
+  if (!control) return;
+  const runId = control.dataset.orchRunId;
+  if (control.dataset.orchRunAction === "rerun") {
+    rerunStoredOrchestrationRun(runId);
+    return;
+  }
+  loadStoredOrchestrationRun(runId);
 }
 
 function handleOrchestrationHistoryKeydown(event) {
+  if (event.target.closest("[data-orch-run-action]")) return;
   if (event.key !== "Enter" && event.key !== " ") return;
   const item = event.target.closest("[data-orch-run-id]");
   if (!item) return;
@@ -2305,6 +2323,26 @@ async function loadStoredOrchestrationRun(runId) {
   } catch (error) {
     renderOrchestrationHistoryMessage("실행 기록을 불러오지 못했습니다.");
     showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "실행 기록을 불러오지 못했습니다.");
+  }
+}
+
+async function rerunStoredOrchestrationRun(runId) {
+  if (!automationStore?.getRun || !runId || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
+  try {
+    const data = await automationStore.getRun(runId);
+    const run = data?.run ?? {};
+    const goal = String(run.goal ?? "").trim();
+    if (!goal) {
+      showToast("다시 실행할 목표가 비어 있습니다.");
+      return;
+    }
+    const metadata = safeParseJson(run.metadata_json);
+    refs.orchestrationGoal.value = goal;
+    refs.orchestrationGoal.dataset.scenarioId = metadata.scenarioId ?? "";
+    refs.orchestrationForm.requestSubmit();
+    showToast("이전 실행 목표로 다시 시작합니다.");
+  } catch (error) {
+    showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "실행 기록을 다시 시작하지 못했습니다.");
   }
 }
 

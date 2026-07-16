@@ -6284,7 +6284,8 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 
 .orch-history-item {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 4px 8px;
   width: 100%;
   padding: 9px 10px;
@@ -6293,13 +6294,50 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   background: rgba(255, 255, 255, 0.64);
   border: 1px solid rgba(166, 116, 49, 0.14);
   border-radius: 12px;
+}
+
+.orch-history-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
   cursor: pointer;
+  font: inherit;
 }
 
 .orch-history-item:hover,
-.orch-history-item:focus-visible {
+.orch-history-item:focus-within {
   outline: 2px solid rgba(230, 170, 78, 0.22);
   background: rgba(255, 246, 224, 0.86);
+}
+
+.orch-history-main:focus-visible {
+  outline: none;
+}
+
+.orch-history-rerun {
+  align-self: center;
+  padding: 5px 8px;
+  color: #214c3b;
+  background: rgba(220, 247, 232, 0.86);
+  border: 1px solid rgba(83, 156, 122, 0.22);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.orch-history-rerun:hover,
+.orch-history-rerun:focus-visible {
+  color: #173629;
+  background: rgba(202, 239, 219, 0.98);
+  outline: none;
 }
 
 .orch-history-item span {
