@@ -201,27 +201,20 @@ async function handleAutomationRoute(request, env, url) {
 }
 
 function getExternalToolStatus(env) {
+  const createStatus = (requiredSecrets = []) => {
+    const missingSecrets = requiredSecrets.filter((key) => !env[key]);
+    return {
+      connected: missingSecrets.length === 0,
+      writeEnabled: false,
+      requiredSecrets,
+      missingSecrets,
+    };
+  };
   return {
-    calendar: {
-      connected: Boolean(env.GOOGLE_CALENDAR_CLIENT_ID && env.GOOGLE_CALENDAR_CLIENT_SECRET),
-      writeEnabled: false,
-      requiredSecrets: ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"],
-    },
-    mail: {
-      connected: Boolean(env.GOOGLE_MAIL_CLIENT_ID && env.GOOGLE_MAIL_CLIENT_SECRET),
-      writeEnabled: false,
-      requiredSecrets: ["GOOGLE_MAIL_CLIENT_ID", "GOOGLE_MAIL_CLIENT_SECRET"],
-    },
-    drive: {
-      connected: Boolean(env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET),
-      writeEnabled: false,
-      requiredSecrets: ["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET"],
-    },
-    notion: {
-      connected: Boolean(env.NOTION_TOKEN),
-      writeEnabled: false,
-      requiredSecrets: ["NOTION_TOKEN"],
-    },
+    calendar: createStatus(["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"]),
+    mail: createStatus(["GOOGLE_MAIL_CLIENT_ID", "GOOGLE_MAIL_CLIENT_SECRET"]),
+    drive: createStatus(["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET"]),
+    notion: createStatus(["NOTION_TOKEN"]),
   };
 }
 

@@ -6302,6 +6302,13 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   gap: 12px;
 }
 
+.automation-ops-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .automation-ops-head strong,
 .automation-audit-head strong {
   color: #243d32;
@@ -6319,6 +6326,13 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   border-radius: 999px;
 }
 
+.automation-ops-head button:hover,
+.automation-ops-head button:focus-visible {
+  color: #173c2d;
+  background: rgba(216, 246, 229, 0.96);
+  outline: none;
+}
+
 .automation-connector-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6328,6 +6342,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 .automation-connector-card,
 .automation-background-card,
 .automation-policy-note,
+.automation-setup-guide,
 .automation-audit-item,
 .admin-automation-status {
   min-width: 0;
@@ -6391,19 +6406,91 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 950;
 }
 
+.automation-connector-card small {
+  overflow: hidden;
+  color: rgba(37, 72, 59, 0.56);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .automation-background-card,
-.automation-policy-note {
+.automation-policy-note,
+.automation-setup-guide {
   display: grid;
   gap: 6px;
 }
 
 .automation-background-card p,
 .automation-policy-note p,
+.automation-setup-guide p,
 .admin-automation-status p {
   margin: 0;
   color: rgba(37, 72, 59, 0.68);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.automation-setup-guide {
+  background:
+    linear-gradient(135deg, rgba(255, 252, 244, 0.86), rgba(241, 252, 247, 0.74)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.automation-setup-guide-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+
+.automation-setup-guide-head strong {
+  color: #243d32;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.automation-setup-guide-head span {
+  color: rgba(37, 72, 59, 0.58);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.automation-setup-guide ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.automation-setup-guide li {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.24fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(77, 151, 126, 0.10);
+  border-radius: 10px;
+}
+
+.automation-setup-guide li strong {
+  color: #274838;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.automation-setup-guide li span {
+  min-width: 0;
+  color: rgba(37, 72, 59, 0.70);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .automation-background-card div,

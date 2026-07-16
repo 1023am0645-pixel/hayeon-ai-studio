@@ -1441,15 +1441,20 @@ function renderAutomationOps() {
     .map((key) => renderAutomationConnectorCard(key, tools[key] ?? {}))
     .join("");
   const auditRows = renderAutomationAuditRows(remoteAuditEvents);
+  const setupGuide = renderAutomationConnectorSetupGuide(tools, background);
 
   refs.automationOps.innerHTML = `
     <div class="automation-ops-head">
       <strong>자동화 운영 상태</strong>
-      <button type="button" id="refreshAutomationOpsButton">새로고침</button>
+      <div class="automation-ops-actions">
+        <button type="button" data-automation-ops-action="copy-connector-checklist">설정 체크리스트 복사</button>
+        <button type="button" id="refreshAutomationOpsButton">새로고침</button>
+      </div>
     </div>
     <div class="automation-connector-grid">
       ${connectorRows}
     </div>
+    ${setupGuide}
     <div class="automation-background-card">
       <span>백그라운드 실행</span>
       <strong>${background.queueConfigured ? "Queue 연결됨" : "브라우저 중심 실행"}</strong>
@@ -1481,12 +1486,55 @@ function renderAutomationConnectorCard(key, status = {}) {
   const label = getAutomationConnectorLabel(key);
   const statusText = writable ? "쓰기 가능" : connected ? "인증 정보 있음" : "미연결";
   const required = Array.isArray(status.requiredSecrets) ? status.requiredSecrets.length : 0;
+  const missingSecrets = getAutomationConnectorMissingSecrets(status);
   return `
     <article class="automation-connector-card ${tone}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(statusText)}</strong>
       <em>${writable ? "외부 실행 가능" : connected ? "승인 모드" : `${required || 1}개 설정 필요`}</em>
+      ${missingSecrets.length ? `<small>필요: ${missingSecrets.map(escapeHtml).join(", ")}</small>` : ""}
     </article>
+  `;
+}
+
+function getAutomationConnectorMissingSecrets(status = {}) {
+  if (Array.isArray(status.missingSecrets)) return status.missingSecrets.filter(Boolean);
+  if (status.connected) return [];
+  return Array.isArray(status.requiredSecrets) ? status.requiredSecrets.filter(Boolean) : [];
+}
+
+function renderAutomationConnectorSetupGuide(tools = {}, background = {}) {
+  const rows = ["calendar", "mail", "drive", "notion"]
+    .map((key) => ({
+      key,
+      label: getAutomationConnectorLabel(key),
+      missing: getAutomationConnectorMissingSecrets(tools[key] ?? {}),
+    }))
+    .filter((item) => item.missing.length);
+  const backgroundNotes = [
+    background.queueConfigured ? "" : "Cloudflare Queue 바인딩 미연결",
+    background.cronConfigured ? "" : "Cron Trigger 미연결",
+    background.writeEnabled ? "" : "외부 쓰기 차단 유지",
+  ].filter(Boolean);
+  if (!rows.length && !backgroundNotes.length) return "";
+  return `
+    <div class="automation-setup-guide" aria-label="자동화 커넥터 설정 가이드">
+      <div class="automation-setup-guide-head">
+        <strong>설정 가이드</strong>
+        <span>값은 저장하지 않고 필요한 항목명만 표시합니다.</span>
+      </div>
+      ${rows.length ? `
+        <ul>
+          ${rows.map((item) => `
+            <li>
+              <strong>${escapeHtml(item.label)}</strong>
+              <span>${item.missing.map(escapeHtml).join(", ")}</span>
+            </li>
+          `).join("")}
+        </ul>
+      ` : "<p>외부 도구 인증 정보는 모두 감지됐습니다.</p>"}
+      ${backgroundNotes.length ? `<p>백그라운드 실행: ${backgroundNotes.map(escapeHtml).join(" · ")}</p>` : ""}
+    </div>
   `;
 }
 
@@ -1569,6 +1617,58 @@ function renderAdminAutomationStatus(message = "") {
 function bindAutomationOpsRefreshButton() {
   refs.refreshAutomationOpsButton = $("#refreshAutomationOpsButton");
   refs.refreshAutomationOpsButton?.addEventListener("click", () => loadAutomationOps({ force: true }));
+  refs.automationOps?.querySelectorAll("[data-automation-ops-action]").forEach((button) => {
+    button.addEventListener("click", handleAutomationOpsAction);
+  });
+}
+
+async function handleAutomationOpsAction(event) {
+  const action = event.currentTarget?.dataset?.automationOpsAction;
+  if (action !== "copy-connector-checklist") return;
+  try {
+    await copyTextToClipboard(buildAutomationConnectorChecklist());
+    showToast("커넥터 설정 체크리스트를 복사했습니다.");
+  } catch {
+    showToast("브라우저 복사 권한이 막혀 체크리스트를 복사하지 못했습니다.");
+  }
+}
+
+function buildAutomationConnectorChecklist() {
+  const connectorStatus = automationConnectorStatus ?? {};
+  const tools = connectorStatus.tools ?? {};
+  const background = connectorStatus.background ?? {};
+  const policy = connectorStatus.policy ?? {};
+  const lines = [
+    "# HA:YEON AI STUDIO 자동화 커넥터 체크리스트",
+    "",
+    `- 생성 시각: ${new Date().toLocaleString("ko-KR")}`,
+    `- 운영 정책: ${policy.requiresOperatorApproval === false ? "자동 실행 허용" : "실행 전 승인 필요"}`,
+    `- 안내: ${policy.note || "외부 도구 쓰기는 명시 승인 후 단계적으로 열어갑니다."}`,
+    "",
+    "## 외부 도구",
+  ];
+  ["calendar", "mail", "drive", "notion"].forEach((key) => {
+    const status = tools[key] ?? {};
+    const missing = getAutomationConnectorMissingSecrets(status);
+    const requiredSecrets = Array.isArray(status.requiredSecrets) ? status.requiredSecrets : missing;
+    lines.push(
+      "",
+      `### ${getAutomationConnectorLabel(key)}`,
+      `- 연결 상태: ${status.writeEnabled ? "쓰기 가능" : status.connected ? "인증 정보 있음" : "미연결"}`,
+      `- 필요한 설정명: ${requiredSecrets.join(", ") || "없음"}`,
+      `- 누락된 설정명: ${missing.join(", ") || "없음"}`,
+      "- 주의: 실제 secret 값은 앱 화면이나 리포트에 기록하지 않습니다."
+    );
+  });
+  lines.push(
+    "",
+    "## 백그라운드 실행",
+    `- Queue: ${background.queueConfigured ? "ON" : "OFF"}`,
+    `- Cron: ${background.cronConfigured ? "ON" : "OFF"}`,
+    `- 쓰기 허용: ${background.writeEnabled ? "ON" : "OFF"}`,
+    `- 메모: ${background.note || "Queue/Cron 연결 전까지 브라우저 중심 실행과 서버 저장만 사용합니다."}`
+  );
+  return lines.join("\n");
 }
 
 function getAutomationConnectorLabel(key) {
