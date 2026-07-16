@@ -2771,6 +2771,20 @@ async function handleToolActionBulk(command = "") {
   }
   const actions = state.orch.toolActions ?? [];
 
+  if (command === "copy-readiness-report") {
+    if (!actions.length) {
+      showToast("복사할 자동화 후보 리포트가 없습니다.");
+      return;
+    }
+    try {
+      await copyTextToClipboard(buildToolActionReadinessReport(actions));
+      showToast("자동화 후보 준비 리포트를 복사했습니다.");
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 리포트를 복사하지 못했습니다.");
+    }
+    return;
+  }
+
   if (command === "prepare-safe-all") {
     const targets = getToolActionSafePrepareTargets(actions);
     if (!targets.length) {
@@ -3981,6 +3995,35 @@ function getToolActionStatusLabel(status) {
   return labels[status] ?? labels.pending;
 }
 
+function getToolActionReadinessStats(actions = []) {
+  const total = actions.length;
+  const prepared = actions.filter(isToolActionSafePrepared).length;
+  const needsPrepare = getToolActionSafePrepareTargets(actions).length;
+  const pending = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending").length;
+  const approved = actions.filter((action) => normalizeToolActionStatus(action.status) === "approved").length;
+  const executed = actions.filter((action) => normalizeToolActionStatus(action.status) === "executed").length;
+  const stopped = actions.filter((action) => ["rejected", "cancelled"].includes(normalizeToolActionStatus(action.status))).length;
+  const dryRun = actions.filter((action) => action.metadata?.dryRun).length;
+  const blocked = actions.filter((action) => action.metadata?.executionAttempt && !action.metadata.executionAttempt.ok).length;
+  const boardTasks = actions.filter((action) => getToolActionBoardTask(action)).length;
+  const templates = actions.filter((action) => getToolActionSavedTemplate(action)).length;
+  const externalExecution = actions.filter((action) => action.metadata?.externalExecution).length;
+  return {
+    total,
+    prepared,
+    needsPrepare,
+    pending,
+    approved,
+    executed,
+    stopped,
+    dryRun,
+    blocked,
+    boardTasks,
+    templates,
+    externalExecution,
+  };
+}
+
 function getToolActionBlockerLabel(code = "") {
   const labels = {
     external_execution_disabled: "외부 실행 꺼짐",
@@ -4082,6 +4125,74 @@ function renderToolActionResultPreview(action = {}) {
   return `<p class="tool-action-result-preview">${escapeHtml(text)}</p>`;
 }
 
+function renderToolActionReadinessSummary(actions = []) {
+  if (!actions.length) return "";
+  const stats = getToolActionReadinessStats(actions);
+  const readyTone = stats.needsPrepare ? "is-warn" : "is-ready";
+  return `
+    <div class="tool-action-readiness ${readyTone}" aria-label="자동화 후보 준비 현황">
+      <div class="tool-action-readiness-head">
+        <strong>준비 현황</strong>
+        <span>${stats.prepared}/${stats.total}개 준비 완료 · 준비 필요 ${stats.needsPrepare}개</span>
+        <button type="button" data-tool-action-bulk="copy-readiness-report">준비 리포트 복사</button>
+      </div>
+      <div class="tool-action-readiness-stats">
+        <span><strong>${stats.pending}</strong><em>승인 대기</em></span>
+        <span><strong>${stats.dryRun}</strong><em>리허설</em></span>
+        <span><strong>${stats.blocked}</strong><em>실행 차단</em></span>
+        <span><strong>${stats.boardTasks}</strong><em>할 일판</em></span>
+        <span><strong>${stats.templates}</strong><em>템플릿</em></span>
+        <span><strong>${stats.externalExecution}</strong><em>외부 실행 기록</em></span>
+      </div>
+    </div>
+  `;
+}
+
+function buildToolActionReadinessReport(actions = []) {
+  const stats = getToolActionReadinessStats(actions);
+  const lines = [
+    "# 자동화 후보 준비 리포트",
+    "",
+    `- 목표: ${state.orch.goal || "기록된 목표 없음"}`,
+    `- 생성 시각: ${new Date().toLocaleString("ko-KR")}`,
+    `- 전체 후보: ${stats.total}개`,
+    `- 준비 완료: ${stats.prepared}개`,
+    `- 준비 필요: ${stats.needsPrepare}개`,
+    `- 승인 대기: ${stats.pending}개`,
+    `- 리허설 완료: ${stats.dryRun}개`,
+    `- 실행 차단: ${stats.blocked}개`,
+    `- 할 일판 연결: ${stats.boardTasks}개`,
+    `- 템플릿 저장: ${stats.templates}개`,
+    `- 외부 실행 기록: ${stats.externalExecution}개`,
+    "",
+    "## 후보별 상태",
+    "",
+  ];
+
+  actions.forEach((action, index) => {
+    const status = normalizeToolActionStatus(action.status);
+    const dryRun = action.metadata?.dryRun;
+    const executionAttempt = action.metadata?.executionAttempt;
+    const boardTask = getToolActionBoardTask(action);
+    const savedTemplate = getToolActionSavedTemplate(action);
+    lines.push(
+      `### ${index + 1}. ${action.title || "도구 액션 초안"}`,
+      "",
+      `- 유형: ${getToolActionTypeLabel(action.actionType)}`,
+      `- 상태: ${getToolActionStatusLabel(status)}`,
+      `- 준비 상태: ${isToolActionSafePrepared(action) ? "완료" : "준비 필요"}`,
+      `- 리허설: ${dryRun ? `${getToolActionDryRunMode(dryRun)} 완료` : "미실행"}`,
+      `- 실행 점검: ${executionAttempt ? (executionAttempt.ok ? "완료" : `차단 · ${getToolActionBlockerLabel(executionAttempt.code || executionAttempt.package?.blocker)}`) : "미실행"}`,
+      `- 할 일판: ${boardTask ? `${boardTask.title} · ${getTaskStatusLabel(boardTask)}` : "미등록"}`,
+      `- 템플릿: ${savedTemplate ? `${savedTemplate.label} · ${savedTemplate.desc}` : "미저장"}`,
+      `- 외부 실행: ${action.metadata?.externalExecution ? "기록 있음" : "없음"}`,
+      "",
+    );
+  });
+
+  return lines.join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
+}
+
 function renderToolActions(actions = []) {
   if (!actions.length) return "";
   const pendingCount = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending").length;
@@ -4151,6 +4262,7 @@ function renderToolActions(actions = []) {
         <span>외부 실행 없이 승인 대기 초안만 생성됩니다.</span>
       </div>
       ${renderAutomationPolicySummary()}
+      ${renderToolActionReadinessSummary(actions)}
       ${bulkControls}
       <div class="tool-action-list">${rows}</div>
     </section>
