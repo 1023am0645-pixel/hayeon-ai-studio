@@ -1486,11 +1486,82 @@ function getAutomationRunSourceInfo(metadata = {}) {
   return { source, label };
 }
 
+function getAutomationRunMetric(value) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function clampAutomationQualityScore(value) {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function getAutomationRunQuality(run = {}) {
+  const metadata = safeParseJson(run.metadata_json);
+  const status = String(run.status ?? "queued");
+  const itemCount = getAutomationRunMetric(run.item_count ?? run.itemCount);
+  const doneCount = getAutomationRunMetric(run.done_count ?? run.doneCount);
+  const reviewCount = getAutomationRunMetric(run.review_count ?? run.reviewCount);
+  const errorCount = getAutomationRunMetric(run.error_count ?? run.errorCount);
+  const skippedCount = getAutomationRunMetric(run.skipped_count ?? run.skippedCount);
+  const artifactCount = getAutomationRunMetric(run.artifact_count ?? run.artifactCount ?? metadata.artifactCount);
+  const toolActionCount = getAutomationRunMetric(run.tool_action_count ?? run.toolActionCount ?? metadata.toolActionCount);
+  const templateCount = getAutomationRunMetric(run.template_count ?? run.templateCount ?? metadata.templateCount);
+  const completionRate = itemCount
+    ? Math.min(1, doneCount / itemCount)
+    : status === "done"
+      ? 1
+      : 0;
+  const statusBonus = status === "done" ? 10 : 0;
+  const volumeBonus = Math.min(5, doneCount);
+  const artifactBonus = Math.min(8, artifactCount * 2);
+  const automationBonus = Math.min(8, toolActionCount * 3) + Math.min(5, templateCount * 5);
+  const penalty = Math.min(55, errorCount * 20 + reviewCount * 7 + skippedCount * 4);
+  const score = clampAutomationQualityScore((completionRate * 72) + statusBonus + volumeBonus + artifactBonus + automationBonus - penalty);
+  const completionPercent = Math.round(completionRate * 100);
+  let tone = "ok";
+  let label = "양호";
+
+  if (errorCount > 0 || status === "error") {
+    tone = "error";
+    label = "오류 있음";
+  } else if (reviewCount >= 2 || (itemCount > 0 && reviewCount / itemCount >= 0.4)) {
+    tone = "review";
+    label = "검토 많음";
+  } else if (score >= 82 && completionPercent >= 80) {
+    tone = "good";
+    label = "우수";
+  } else if (score < 65 || reviewCount > 0) {
+    tone = "warn";
+    label = "점검 필요";
+  }
+
+  return {
+    score,
+    tone,
+    label,
+    completionRate,
+    completionPercent,
+    itemCount,
+    doneCount,
+    reviewCount,
+    errorCount,
+    skippedCount,
+    artifactCount,
+    toolActionCount,
+    templateCount,
+    isGood: tone === "good",
+    needsReview: ["warn", "review", "error"].includes(tone),
+  };
+}
+
 function renderOrchestrationHistory(runs) {
   if (!refs.orchestrationHistory) return;
   const rows = runs.map((run) => {
     const metadata = safeParseJson(run.metadata_json);
     const sourceInfo = getAutomationRunSourceInfo(metadata);
+    const quality = getAutomationRunQuality(run);
     const status = String(run.status ?? "queued");
     const statusLabel = getOrchestrationStatusLabel(status);
     const itemCount = Number(run.item_count ?? 0);
@@ -1517,6 +1588,10 @@ function renderOrchestrationHistory(runs) {
           <div class="orch-history-badges">
             <span>${escapeHtml(statusLabel)}</span>
             <span class="orch-history-source is-${escapeHtml(sourceInfo.source.type)}">${escapeHtml(sourceInfo.label)}</span>
+            <span
+              class="orch-history-quality is-${escapeHtml(quality.tone)}"
+              title="완료율 ${quality.completionPercent}% · 오류 ${quality.errorCount} · 검토 ${quality.reviewCount} · 산출물 ${quality.artifactCount}"
+            >${escapeHtml(quality.label)} ${quality.score}</span>
           </div>
           <strong>${escapeHtml(run.goal || "목표 없음")}</strong>
           <em>${escapeHtml(meta || "기록 정보 없음")}</em>
@@ -1845,6 +1920,8 @@ function getAutomationOpsNextSteps(health = {}, tools = {}, background = {}, pol
   const missingSecrets = ["calendar", "mail", "drive", "notion"]
     .flatMap((key) => getAutomationConnectorMissingSecrets(tools[key] ?? {}));
   const uniqueMissingSecrets = [...new Set(missingSecrets)].sort();
+  const qualityStats = getAutomationRunQualityStats(remoteOpsRuns);
+  const repeatCandidate = qualityStats.recommendedTemplates.find((item) => item.count >= 2 && item.avgScore >= 75);
   const steps = [];
 
   if (health?.storage !== "d1") {
@@ -1889,6 +1966,22 @@ function getAutomationOpsNextSteps(health = {}, tools = {}, background = {}, pol
     });
   }
 
+  if (qualityStats.total && qualityStats.needsReviewCount) {
+    steps.push({
+      tone: "warn",
+      title: "품질 낮은 실행 수정 후 재실행",
+      text: `${qualityStats.needsReviewCount}건은 검토/오류가 남아 있습니다. 해당 실행은 템플릿화보다 수정 후 재실행을 우선하세요.`,
+    });
+  }
+
+  if (repeatCandidate) {
+    steps.push({
+      tone: "ready",
+      title: "반복 업무 후보",
+      text: `${repeatCandidate.label}은 ${repeatCandidate.count}회 실행, 평균 완료율 ${repeatCandidate.avgCompletion}%입니다. 저장 템플릿으로 운영해도 좋습니다.`,
+    });
+  }
+
   if (policy.requiresOperatorApproval !== false) {
     steps.push({
       tone: "ready",
@@ -1921,6 +2014,26 @@ function renderAutomationOpsNextSteps(health = {}, tools = {}, background = {}, 
   `;
 }
 
+function getAutomationRunRepeatKey(run = {}, source = {}) {
+  const metadata = safeParseJson(run.metadata_json);
+  return (
+    source.sourceTemplateId ||
+    source.sourceRunId ||
+    metadata.scenarioId ||
+    String(run.goal || "").trim().slice(0, 140)
+  );
+}
+
+function getAutomationRunRepeatLabel(run = {}, source = {}) {
+  const metadata = safeParseJson(run.metadata_json);
+  return (
+    source.sourceTemplateLabel ||
+    metadata.scenarioLabel ||
+    source.label ||
+    String(run.goal || "자동화 실행").trim().slice(0, 80)
+  );
+}
+
 function getAutomationRunSourceStats(runs = []) {
   const sourceCounts = { manual: 0, scenario: 0, template: 0, rerun: 0 };
   const repeatMap = new Map();
@@ -1936,11 +2049,11 @@ function getAutomationRunSourceStats(runs = []) {
     const isSuccess = String(run.status ?? "") === "done" || (itemCount > 0 && doneCount >= itemCount && errorCount === 0);
     if (isSuccess) successful += 1;
 
-    const repeatKey = source.sourceTemplateId || source.sourceRunId || String(run.goal || "").slice(0, 120);
+    const repeatKey = getAutomationRunRepeatKey(run, source);
     if (!repeatKey) return;
     const previous = repeatMap.get(repeatKey) ?? {
       key: repeatKey,
-      label: source.sourceTemplateLabel || source.label || String(run.goal || "자동화 실행").slice(0, 80),
+      label: getAutomationRunRepeatLabel(run, source),
       goal: String(run.goal || "").slice(0, 120),
       count: 0,
       done: 0,
@@ -1963,9 +2076,85 @@ function getAutomationRunSourceStats(runs = []) {
   };
 }
 
+function getRecommendedAutomationTemplates(runs = [], { limit = 3 } = {}) {
+  const repeatMap = new Map();
+
+  runs.forEach((run) => {
+    const metadata = safeParseJson(run.metadata_json);
+    const { source } = getAutomationRunSourceInfo(metadata);
+    const key = getAutomationRunRepeatKey(run, source);
+    if (!key) return;
+
+    const quality = getAutomationRunQuality(run);
+    const previous = repeatMap.get(key) ?? {
+      key,
+      label: getAutomationRunRepeatLabel(run, source),
+      goal: String(run.goal || "").slice(0, 140),
+      count: 0,
+      totalScore: 0,
+      totalCompletion: 0,
+      done: 0,
+      needsReview: 0,
+      errors: 0,
+    };
+    previous.count += 1;
+    previous.totalScore += quality.score;
+    previous.totalCompletion += quality.completionPercent;
+    if (quality.completionPercent >= 80 && quality.errorCount === 0) previous.done += 1;
+    if (quality.needsReview) previous.needsReview += 1;
+    if (quality.errorCount) previous.errors += 1;
+    repeatMap.set(key, previous);
+  });
+
+  return [...repeatMap.values()]
+    .map((item) => ({
+      ...item,
+      avgScore: Math.round(item.totalScore / item.count),
+      avgCompletion: Math.round(item.totalCompletion / item.count),
+      qualityLabel: item.errors ? "오류 점검" : item.needsReview ? "수정 후 재실행" : "반복 후보",
+    }))
+    .sort((a, b) => {
+      const aReady = a.errors || a.needsReview ? 0 : 1;
+      const bReady = b.errors || b.needsReview ? 0 : 1;
+      return bReady - aReady || b.count - a.count || b.avgCompletion - a.avgCompletion || b.avgScore - a.avgScore;
+    })
+    .slice(0, limit);
+}
+
+function getAutomationRunQualityStats(runs = []) {
+  const qualities = Array.isArray(runs) ? runs.map(getAutomationRunQuality) : [];
+  const total = qualities.length;
+  const averageCompletion = total
+    ? Math.round(qualities.reduce((sum, item) => sum + item.completionPercent, 0) / total)
+    : 0;
+  const averageScore = total
+    ? Math.round(qualities.reduce((sum, item) => sum + item.score, 0) / total)
+    : 0;
+  const needsReviewCount = qualities.filter((item) => item.needsReview).length;
+  const goodCount = qualities.filter((item) => item.isGood).length;
+  const errorCount = qualities.reduce((sum, item) => sum + item.errorCount, 0);
+  const artifactCount = qualities.reduce((sum, item) => sum + item.artifactCount, 0);
+  const toolActionCount = qualities.reduce((sum, item) => sum + item.toolActionCount, 0);
+  const templateCount = qualities.reduce((sum, item) => sum + item.templateCount, 0);
+
+  return {
+    total,
+    averageCompletion,
+    averageScore,
+    needsReviewCount,
+    goodCount,
+    errorCount,
+    artifactCount,
+    toolActionCount,
+    templateCount,
+    recommendedTemplates: getRecommendedAutomationTemplates(runs),
+  };
+}
+
 function renderAutomationRunSourceInsights(runs = []) {
   if (!Array.isArray(runs) || !runs.length) return "";
   const stats = getAutomationRunSourceStats(runs);
+  const qualityStats = getAutomationRunQualityStats(runs);
   const sourceLabels = {
     manual: "직접",
     scenario: "시나리오",
@@ -1983,6 +2172,14 @@ function renderAutomationRunSourceInsights(runs = []) {
           <span class="is-${escapeHtml(key)}"><strong>${Number(stats.sourceCounts[key] ?? 0)}</strong><em>${escapeHtml(label)}</em></span>
         `).join("")}
       </div>
+      <div class="automation-quality-summary">
+        <span class="is-good"><strong>${qualityStats.averageCompletion}%</strong><em>평균 완료율</em></span>
+        <span><strong>${qualityStats.averageScore}</strong><em>평균 품질</em></span>
+        <span class="${qualityStats.needsReviewCount ? "is-warn" : "is-good"}"><strong>${qualityStats.needsReviewCount}</strong><em>점검 필요</em></span>
+        <span><strong>${qualityStats.artifactCount}</strong><em>산출물</em></span>
+        <span><strong>${qualityStats.toolActionCount}</strong><em>자동화 후보</em></span>
+        <span><strong>${qualityStats.templateCount}</strong><em>템플릿</em></span>
+      </div>
       ${stats.topRepeats.length ? `
         <ol>
           ${stats.topRepeats.map((item) => `
@@ -1993,6 +2190,19 @@ function renderAutomationRunSourceInsights(runs = []) {
           `).join("")}
         </ol>
       ` : "<p>반복 실행 후보가 아직 충분하지 않습니다.</p>"}
+      <div class="automation-recommended-templates">
+        <strong>추천 템플릿</strong>
+        ${qualityStats.recommendedTemplates.length ? `
+          <ol>
+            ${qualityStats.recommendedTemplates.map((item) => `
+              <li class="${item.needsReview || item.errors ? "is-warn" : "is-ready"}">
+                <strong>${escapeHtml(item.label || item.goal || "자동화 실행")}</strong>
+                <span>${item.count}회 · 완료율 ${item.avgCompletion}% · 품질 ${item.avgScore} · ${escapeHtml(item.qualityLabel)}</span>
+              </li>
+            `).join("")}
+          </ol>
+        ` : "<p>추천할 반복 템플릿이 아직 없습니다.</p>"}
+      </div>
     </div>
   `;
 }
@@ -2391,6 +2601,7 @@ function buildAutomationOpsReport() {
   lines.push("", "## 실행 출처 요약");
   if (remoteOpsRuns.length) {
     const stats = getAutomationRunSourceStats(remoteOpsRuns);
+    const qualityStats = getAutomationRunQualityStats(remoteOpsRuns);
     lines.push(
       `- 최근 실행 기록: ${stats.total}건`,
       `- 완료율: ${stats.successRate}% (${stats.successful}/${stats.total})`,
@@ -2405,8 +2616,28 @@ function buildAutomationOpsReport() {
       lines.push(`${index + 1}. ${item.label || item.goal || "자동화 실행"} · ${item.count}회 실행 · ${item.done}회 완료`);
     });
     if (!stats.topRepeats.length) lines.push("- 반복 실행 후보가 아직 충분하지 않습니다.");
+
+    lines.push(
+      "",
+      "## 품질 요약",
+      `- 평균 완료율: ${qualityStats.averageCompletion}%`,
+      `- 평균 품질 점수: ${qualityStats.averageScore}/100`,
+      `- 우수 실행: ${qualityStats.goodCount}건`,
+      `- 점검 필요 실행: ${qualityStats.needsReviewCount}건`,
+      `- 오류 수: ${qualityStats.errorCount}건`,
+      `- 산출물 수: ${qualityStats.artifactCount}건`,
+      `- 자동화 후보 수: ${qualityStats.toolActionCount}건`,
+      `- 저장 템플릿 수: ${qualityStats.templateCount}건`,
+      "",
+      "### 추천 반복 템플릿"
+    );
+    qualityStats.recommendedTemplates.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item.label || item.goal || "자동화 실행"} · ${item.count}회 · 완료율 ${item.avgCompletion}% · 품질 ${item.avgScore} · ${item.qualityLabel}`);
+    });
+    if (!qualityStats.recommendedTemplates.length) lines.push("- 추천할 반복 템플릿이 아직 없습니다.");
   } else {
     lines.push("- 최근 실행 기록을 불러오지 못했거나 기록이 없습니다.");
+    lines.push("", "## 품질 요약", "- 최근 실행 기록이 없어 품질 요약을 계산하지 못했습니다.");
   }
 
   lines.push("", "## 외부 도구 커넥터");

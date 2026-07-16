@@ -440,6 +440,7 @@ async function createAutomationRun(db, body, requestId) {
 }
 
 async function listAutomationRuns(db, url, requestId) {
+  await ensureAutomationTemplateAuditTables(db);
   const rawLimit = Number(url.searchParams.get("limit") ?? 8);
   const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 8, 1), 30);
   const rows = await db.prepare(`
@@ -459,7 +460,26 @@ async function listAutomationRuns(db, url, requestId) {
       COALESCE(SUM(CASE WHEN i.status = 'done' THEN 1 ELSE 0 END), 0) AS done_count,
       COALESCE(SUM(CASE WHEN i.status = 'review' THEN 1 ELSE 0 END), 0) AS review_count,
       COALESCE(SUM(CASE WHEN i.status = 'error' THEN 1 ELSE 0 END), 0) AS error_count,
-      COALESCE(SUM(CASE WHEN i.status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count
+      COALESCE(SUM(CASE WHEN i.status = 'skipped' THEN 1 ELSE 0 END), 0) AS skipped_count,
+      (
+        SELECT COUNT(*)
+        FROM artifacts a
+        WHERE a.run_id = r.id
+      ) AS artifact_count,
+      (
+        SELECT COUNT(*)
+        FROM tool_actions ta
+        WHERE ta.source_run_id = r.id
+      ) AS tool_action_count,
+      (
+        SELECT COUNT(*)
+        FROM automation_templates tpl
+        WHERE tpl.source_action_id IN (
+          SELECT ta2.id
+          FROM tool_actions ta2
+          WHERE ta2.source_run_id = r.id
+        )
+      ) AS template_count
     FROM agent_runs r
     LEFT JOIN agent_run_items i ON i.run_id = r.id
     GROUP BY r.id
