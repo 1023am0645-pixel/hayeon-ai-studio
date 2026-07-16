@@ -1464,6 +1464,7 @@ function renderAutomationOps() {
       <strong>자동화 운영 상태</strong>
       <div class="automation-ops-actions">
         <button type="button" data-automation-ops-action="copy-connector-checklist">설정 체크리스트 복사</button>
+        <button type="button" data-automation-ops-action="download-ops-report">운영 리포트 저장</button>
         <button type="button" id="refreshAutomationOpsButton">새로고침</button>
       </div>
     </div>
@@ -1692,12 +1693,21 @@ function bindAutomationOpsRefreshButton() {
 
 async function handleAutomationOpsAction(event) {
   const action = event.currentTarget?.dataset?.automationOpsAction;
-  if (action !== "copy-connector-checklist") return;
-  try {
-    await copyTextToClipboard(buildAutomationConnectorChecklist());
-    showToast("커넥터 설정 체크리스트를 복사했습니다.");
-  } catch {
-    showToast("브라우저 복사 권한이 막혀 체크리스트를 복사하지 못했습니다.");
+  if (action === "copy-connector-checklist") {
+    try {
+      await copyTextToClipboard(buildAutomationConnectorChecklist());
+      showToast("커넥터 설정 체크리스트를 복사했습니다.");
+    } catch {
+      showToast("브라우저 복사 권한이 막혀 체크리스트를 복사하지 못했습니다.");
+    }
+    return;
+  }
+  if (action === "download-ops-report") {
+    downloadTextFile(
+      makeOrchestrationFilename("hayeon-automation-ops-report"),
+      buildAutomationOpsReport()
+    );
+    showToast("자동화 운영 리포트를 Markdown으로 저장했습니다.");
   }
 }
 
@@ -1737,6 +1747,94 @@ function buildAutomationConnectorChecklist() {
     `- 메모: ${background.note || "Queue/Cron 연결 전까지 브라우저 중심 실행과 서버 저장만 사용합니다."}`
   );
   return lines.join("\n");
+}
+
+function buildAutomationOpsReport() {
+  const connectorStatus = automationConnectorStatus ?? {};
+  const tools = connectorStatus.tools ?? {};
+  const background = connectorStatus.background ?? {};
+  const policy = connectorStatus.policy ?? {};
+  const health = automationHealthStatus ?? {};
+  const summary = health.storageSummary && typeof health.storageSummary === "object"
+    ? health.storageSummary
+    : null;
+  const lines = [
+    "# HA:YEON AI STUDIO 자동화 운영 리포트",
+    "",
+    `- 생성 시각: ${new Date().toLocaleString("ko-KR")}`,
+    `- 서버 저장소: ${health.storage === "d1" ? "D1 연결됨" : "D1 미연결/확인 필요"}`,
+    `- 바인딩: ${health.binding || "AGENT_DB"}`,
+    `- 스키마: ${health.schema || "migrations/0001_agent_automation.sql"}`,
+    `- 운영 정책: ${policy.requiresOperatorApproval === false ? "자동 실행 허용" : "실행 전 승인 필요"}`,
+    `- 경고: ${automationOpsWarning || "없음"}`,
+    "",
+    "## 저장소 요약",
+  ];
+
+  if (summary) {
+    lines.push(
+      `- 저장 레코드: ${Number(summary.totalRecords ?? 0)}건`,
+      `- 테이블 준비: ${Number(summary.readyTables ?? 0)}/${Number(summary.tableCount ?? 0)}`,
+      `- 누락 테이블: ${Number(summary.missingTables ?? 0)}`,
+      `- 조회 오류 테이블: ${Number(summary.errorTables ?? 0)}`,
+      `- 최근 저장: ${summary.lastUpdated ? formatRemoteDate(summary.lastUpdated) : "기록 없음"}`,
+      "",
+      "### 테이블별 상태"
+    );
+    Object.entries(summary.tables ?? {}).forEach(([key, table]) => {
+      const status = table?.status === "ready" ? `${Number(table.count ?? 0)}건` : table?.status === "missing" ? "누락" : "확인 실패";
+      lines.push(`- ${table?.label || key} (${key}): ${status}`);
+    });
+  } else {
+    lines.push("- 저장소 요약을 불러오지 못했습니다.");
+  }
+
+  lines.push("", "## 외부 도구 커넥터");
+  ["calendar", "mail", "drive", "notion"].forEach((key) => {
+    const status = tools[key] ?? {};
+    const missing = getAutomationConnectorMissingSecrets(status);
+    const requiredSecrets = Array.isArray(status.requiredSecrets) ? status.requiredSecrets : missing;
+    lines.push(
+      "",
+      `### ${getAutomationConnectorLabel(key)}`,
+      `- 연결 상태: ${status.writeEnabled ? "쓰기 가능" : status.connected ? "인증 정보 있음" : "미연결"}`,
+      `- 필요한 설정명: ${requiredSecrets.join(", ") || "없음"}`,
+      `- 누락된 설정명: ${missing.join(", ") || "없음"}`
+    );
+  });
+
+  lines.push(
+    "",
+    "## 백그라운드 실행",
+    `- Queue: ${background.queueConfigured ? "ON" : "OFF"}`,
+    `- Cron: ${background.cronConfigured ? "ON" : "OFF"}`,
+    `- 쓰기 허용: ${background.writeEnabled ? "ON" : "OFF"}`,
+    `- 메모: ${background.note || "Queue/Cron 연결 전까지 브라우저 중심 실행과 서버 저장만 사용합니다."}`,
+    "",
+    "## 최근 감사 로그"
+  );
+
+  if (remoteAuditEvents.length) {
+    remoteAuditEvents.slice(0, 8).forEach((event) => {
+      const status = getToolActionStatusLabel(normalizeToolActionStatus(event.status, "pending"));
+      const meta = [
+        getAutomationAuditEventLabel(event.event_type),
+        formatRemoteDate(event.created_at),
+      ].filter(Boolean).join(" · ");
+      lines.push(`- ${status} · ${event.title || "자동화 이벤트"} · ${event.message || meta || "세부 기록 없음"}`);
+    });
+  } else {
+    lines.push("- 저장된 감사 로그가 없습니다.");
+  }
+
+  lines.push(
+    "",
+    "## 보안 메모",
+    "- 이 리포트는 secret 이름과 상태만 포함합니다.",
+    "- 실제 API 키, OAuth secret, 토큰 값은 앱 화면과 리포트에 기록하지 않습니다."
+  );
+
+  return lines.join("\n").trimEnd() + "\n";
 }
 
 function getAutomationConnectorLabel(key) {
