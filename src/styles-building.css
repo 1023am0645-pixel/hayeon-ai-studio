@@ -6846,6 +6846,26 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   gap: 4px 8px;
 }
 
+button.automation-audit-item {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+button.automation-audit-item:hover,
+button.automation-audit-item:focus-visible {
+  background: rgba(248, 245, 255, 0.88);
+  border-color: rgba(130, 100, 160, 0.24);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .automation-audit-item span {
   align-self: start;
   padding: 2px 7px;

@@ -1828,18 +1828,31 @@ function renderAutomationAuditRows(events = []) {
       ${events.map((event) => {
         const metadata = safeParseJson(event.metadata_json);
         const status = normalizeToolActionStatus(event.status, "pending");
+        const taskId = event.task_id || event.taskId || metadata.taskId || "";
+        const actionId = event.source_action_id || event.sourceActionId || metadata.sourceActionId || metadata.actionId || "";
+        const runId = event.source_run_id || event.sourceRunId || metadata.sourceRunId || metadata.runId || "";
+        const canOpenLinkedItem = Boolean(taskId || actionId);
         const meta = [
           getAutomationAuditEventLabel(event.event_type),
           metadata.phase,
+          canOpenLinkedItem ? "클릭해 연결 항목 열기" : "",
           formatRemoteDate(event.created_at),
         ].filter(Boolean).join(" · ");
+        const tagName = canOpenLinkedItem ? "button" : "article";
+        const linkAttrs = canOpenLinkedItem ? `
+            type="button"
+            data-automation-audit-task-id="${escapeHtml(taskId)}"
+            data-automation-audit-action-id="${escapeHtml(actionId)}"
+            data-automation-audit-run-id="${escapeHtml(runId)}"
+            title="연결된 자동화 항목 열기"
+          ` : "";
         return `
-          <article class="automation-audit-item is-${escapeHtml(status)}">
+          <${tagName} class="automation-audit-item is-${escapeHtml(status)}${canOpenLinkedItem ? " is-linked" : ""}"${linkAttrs}>
             <span>${escapeHtml(getToolActionStatusLabel(status))}</span>
             <strong>${escapeHtml(event.title || "자동화 이벤트")}</strong>
             <p>${escapeHtml(event.message || meta || "세부 기록 없음")}</p>
             <em>${escapeHtml(meta)}</em>
-          </article>
+          </${tagName}>
         `;
       }).join("")}
     </div>
@@ -1899,6 +1912,9 @@ function bindAutomationOpsRefreshButton() {
   refs.automationOps?.querySelectorAll("[data-automation-task-id]").forEach((button) => {
     button.addEventListener("click", handleAutomationOpsTaskOpen);
   });
+  refs.automationOps?.querySelectorAll("[data-automation-audit-task-id], [data-automation-audit-action-id]").forEach((button) => {
+    button.addEventListener("click", handleAutomationAuditItemOpen);
+  });
 }
 
 function handleAutomationOpsTaskOpen(event) {
@@ -1926,6 +1942,53 @@ function ensureAutomationOpsTaskInLocalState(taskId = "") {
   syncEmployeeStatusFromActiveTasks();
   saveState();
   return getTask(taskId) ?? remoteTask;
+}
+
+async function handleAutomationAuditItemOpen(event) {
+  const target = event.currentTarget;
+  const taskId = target?.dataset?.automationAuditTaskId ?? "";
+  const actionId = target?.dataset?.automationAuditActionId ?? "";
+  const runId = target?.dataset?.automationAuditRunId ?? "";
+
+  if (taskId) {
+    const task = ensureAutomationOpsTaskInLocalState(taskId);
+    if (task) {
+      renderKanban();
+      openTaskDrawer();
+      openTaskDetailModal(task.id);
+      showToast("감사 로그와 연결된 업무를 열었습니다.");
+      return;
+    }
+  }
+
+  if (actionId) {
+    const action = await ensureAutomationAuditActionInLocalState(actionId, runId);
+    if (action) {
+      openOrchestrationPanel();
+      openToolActionPreview(action);
+      showToast("감사 로그와 연결된 자동화 후보를 열었습니다.");
+      return;
+    }
+  }
+
+  showToast("연결된 자동화 항목을 현재 화면에서 찾지 못했습니다.");
+}
+
+async function ensureAutomationAuditActionInLocalState(actionId = "", runId = "") {
+  let action = findToolAction(actionId);
+  if (action) return action;
+  if (!automationStore?.listToolActions || !isAdminLoggedIn()) return null;
+
+  try {
+    const data = await automationStore.listToolActions({ runId, limit: 80 });
+    const remoteActions = hydrateRemoteToolActions(data?.toolActions ?? []);
+    if (mergeRemoteToolActions(remoteActions)) saveState();
+    action = findToolAction(actionId);
+  } catch (error) {
+    if (!automationStore.isStorageMissing?.(error)) console.warn("audit action load failed:", error);
+  }
+
+  return action;
 }
 
 async function handleAutomationOpsAction(event) {
