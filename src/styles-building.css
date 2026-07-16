@@ -6120,6 +6120,166 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   gap: 7px;
 }
 
+.orch-workflow-form-list {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.orch-workflow-form {
+  overflow: hidden;
+  color: #3d2814;
+  background:
+    linear-gradient(145deg, rgba(255, 253, 247, 0.94), rgba(236, 248, 241, 0.70));
+  border: 1px solid rgba(77, 151, 126, 0.14);
+  border-radius: 13px;
+  box-shadow: 0 8px 18px rgba(95, 62, 27, 0.06);
+}
+
+.orch-workflow-form[open] {
+  border-color: rgba(77, 151, 126, 0.24);
+  box-shadow: 0 12px 24px rgba(95, 62, 27, 0.08);
+}
+
+.orch-workflow-form summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.orch-workflow-form summary::-webkit-details-marker {
+  display: none;
+}
+
+.orch-workflow-form summary span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.orch-workflow-form summary strong,
+.orch-workflow-form summary em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orch-workflow-form summary strong {
+  color: #263f34;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.orch-workflow-form summary em {
+  color: rgba(58, 43, 25, 0.62);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.orch-workflow-form summary small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  color: #4d3517;
+  background: rgba(255, 233, 184, 0.82);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.orch-workflow-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 0 10px 9px;
+}
+
+.orch-workflow-fields label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: rgba(47, 31, 16, 0.72);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.orch-workflow-fields label.is-wide {
+  grid-column: 1 / -1;
+}
+
+.orch-workflow-fields input,
+.orch-workflow-fields textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  color: #2f1f10;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(77, 151, 126, 0.14);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.orch-workflow-fields textarea {
+  resize: vertical;
+}
+
+.orch-workflow-fields input:focus,
+.orch-workflow-fields textarea:focus {
+  border-color: rgba(77, 151, 126, 0.36);
+  box-shadow: 0 0 0 3px rgba(77, 151, 126, 0.10);
+}
+
+.orch-workflow-instructions {
+  display: grid;
+  gap: 4px;
+  padding: 0 10px 9px;
+}
+
+.orch-workflow-instructions span {
+  color: rgba(65, 43, 21, 0.56);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.orch-workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.orch-workflow-actions button {
+  padding: 6px 10px;
+  color: #4d3517;
+  background: rgba(255, 236, 184, 0.88);
+  border: 1px solid rgba(171, 123, 57, 0.16);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.orch-workflow-actions button[data-workflow-form-action="run"] {
+  color: #173f2e;
+  background: rgba(220, 247, 232, 0.92);
+  border-color: rgba(77, 151, 126, 0.18);
+}
+
+.orch-workflow-actions button:hover,
+.orch-workflow-actions button:focus-visible {
+  filter: brightness(1.03);
+  outline: none;
+}
+
 .orch-template-chip {
   display: grid;
   gap: 3px;
@@ -9004,6 +9164,18 @@ button.automation-audit-item:focus-visible {
 
   .orch-template-list {
     grid-template-columns: 1fr;
+  }
+
+  .orch-workflow-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .orch-workflow-form summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .orch-workflow-form summary small {
+    width: fit-content;
   }
 
   .orch-log-item {

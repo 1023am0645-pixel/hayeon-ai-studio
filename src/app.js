@@ -233,6 +233,94 @@ const orchestrationTemplates = [
     ].join("\n"),
   },
 ];
+const workflowScenarioForms = [
+  {
+    id: "lecture-prep",
+    label: "강의 준비",
+    desc: "주제·대상·시간만 넣으면 교안과 리허설 흐름으로 정리합니다.",
+    artifactType: "lecture-plan",
+    fields: [
+      { name: "topic", label: "강의 주제", placeholder: "예: 신입직원 AX 입문교육" },
+      { name: "audience", label: "대상", placeholder: "예: 사내 강사 20명" },
+      { name: "duration", label: "시간", placeholder: "예: 90분 / 2시간 / 반나절" },
+      { name: "objective", label: "핵심 목표", placeholder: "예: 업무에 바로 쓰는 AI 활용 흐름 이해" },
+      { name: "deliverables", label: "필요 산출물", placeholder: "예: 강의 흐름안, PPT 목차, 리허설 체크리스트", type: "textarea" },
+    ],
+    instructions: [
+      "강의 흐름안, PPT 구성, 실습 활동, 리허설 체크리스트를 분리한다.",
+      "부족한 날짜, 장소, 준비물은 확인 필요로 남긴다.",
+      "할 일판에 등록할 수 있는 준비 업무를 3~6개로 나눈다.",
+    ],
+  },
+  {
+    id: "lecture-review",
+    label: "강의 후기 정리",
+    desc: "후기 원문을 요약·분류하고 다음 강의 개선점으로 연결합니다.",
+    artifactType: "review-summary",
+    fields: [
+      { name: "lectureName", label: "강의명", placeholder: "예: 생성형 AI 업무 자동화 특강" },
+      { name: "date", label: "날짜", placeholder: "예: 7월 18일" },
+      { name: "feedback", label: "후기 원문", placeholder: "참여자 후기, 채팅 로그, 설문 내용을 붙여넣기", type: "textarea" },
+      { name: "criteria", label: "분류 기준", placeholder: "예: 만족 포인트, 어려웠던 점, 다음 개선점" },
+    ],
+    instructions: [
+      "후기 원문을 요약, 키워드, 개선점, 홍보 문구 후보로 분리한다.",
+      "원문에 없는 반응이나 숫자는 만들지 않는다.",
+      "아카이브용 요약과 다음 강의 반영 체크리스트를 만든다.",
+    ],
+  },
+  {
+    id: "ax-report",
+    label: "AX 보고서",
+    desc: "활동 내용과 성과를 공식 보고서 초안으로 구조화합니다.",
+    artifactType: "ax-report",
+    fields: [
+      { name: "activities", label: "활동 내용", placeholder: "예: 7월 AX-서포터즈 교육/실습/코칭 내용", type: "textarea" },
+      { name: "outcomes", label: "성과", placeholder: "예: 참여자 변화, 산출물, 업무 개선 사례", type: "textarea" },
+      { name: "issues", label: "과제", placeholder: "예: 참여율, 도구 접근, 자료 정리 이슈" },
+      { name: "nextPlan", label: "다음 계획", placeholder: "예: 다음 달 운영 계획과 지원 필요사항", type: "textarea" },
+    ],
+    instructions: [
+      "공식과제, 자율과제, 산출물, 다음 계획 기준으로 구조화한다.",
+      "근거 없는 수치, 링크, 성과명은 만들지 않고 확인 필요로 남긴다.",
+      "제출용 요약과 내부 운영 체크리스트를 함께 만든다.",
+    ],
+  },
+  {
+    id: "app-feature",
+    label: "앱 기능 정리",
+    desc: "화면·문제·기능을 개발 가능한 명세와 우선순위로 바꿉니다.",
+    artifactType: "app-spec",
+    fields: [
+      { name: "screen", label: "화면/영역", placeholder: "예: 오케스트레이션 패널 / 직원 카드" },
+      { name: "feature", label: "원하는 기능", placeholder: "예: 승인 대기 업무를 한눈에 보기" },
+      { name: "problem", label: "현재 문제", placeholder: "예: 어디서 실행해야 하는지 헷갈림", type: "textarea" },
+      { name: "priority", label: "우선순위", placeholder: "예: 발표 전 필수 / 다음 버전 / 보류" },
+    ],
+    instructions: [
+      "사용자 문제, 기능 요구, 화면 단위 작업, 예외 상태, 검수 기준을 분리한다.",
+      "MVP에서 반드시 할 것과 보류할 것을 구분한다.",
+      "할 일판으로 옮길 수 있는 개발 작업 단위를 만든다.",
+    ],
+  },
+  {
+    id: "automation-template",
+    label: "자동화 템플릿",
+    desc: "반복 업무의 입력값·처리 순서·출력물을 재사용 템플릿으로 만듭니다.",
+    artifactType: "automation-template",
+    fields: [
+      { name: "taskName", label: "반복 업무명", placeholder: "예: 강의 후기 아카이브 정리" },
+      { name: "inputs", label: "필요 입력값", placeholder: "예: 후기 원문, 강의명, 날짜, 링크", type: "textarea" },
+      { name: "process", label: "처리 순서", placeholder: "예: 요약 → 분류 → 개선점 추출 → 보고서 저장", type: "textarea" },
+      { name: "output", label: "결과물", placeholder: "예: 아카이브 문서, 보고서 초안, 할 일판 업무" },
+    ],
+    instructions: [
+      "시작 조건, 입력값, 처리 순서, 출력물, 검수 기준, 예외 상황을 정리한다.",
+      "외부 전송 금지 조건과 사람 승인 지점을 반드시 포함한다.",
+      "저장 가능한 자동화 템플릿 형태로 작성한다.",
+    ],
+  },
+];
 const artifactTypeLabels = {
   "lecture-plan": "강의 준비",
   "review-summary": "후기 정리",
@@ -1004,6 +1092,7 @@ function bindEvents() {
   });
 
   refs.orchestrationTemplates?.addEventListener("click", handleOrchestrationTemplateClick);
+  refs.orchestrationTemplates?.addEventListener("keydown", handleWorkflowScenarioFormKeydown);
   refs.orchestrationForm.addEventListener("submit", handleOrchestrationSubmit);
   refs.orchestrationProgress.addEventListener("click", handleOrchestrationReviewAction);
   refs.orchestrationDetail.addEventListener("click", handleOrchestrationReviewAction);
@@ -1116,6 +1205,13 @@ function renderOrchestrationTemplates() {
   if (!refs.orchestrationTemplates) return;
   const savedTemplates = hydrateAutomationTemplates(state.automationTemplates);
   refs.orchestrationTemplates.innerHTML = `
+    <div class="orch-template-head is-workflow">
+      <strong>업무 입력 폼</strong>
+      <span>필요한 값만 넣으면 실행 목표로 자동 변환됩니다.</span>
+    </div>
+    <div class="orch-workflow-form-list">
+      ${workflowScenarioForms.map((form, index) => renderWorkflowScenarioForm(form, { open: index === 0 })).join("")}
+    </div>
     <div class="orch-template-head">
       <strong>빠른 시나리오</strong>
       <span>누르면 목표 입력창에 자동 입력됩니다.</span>
@@ -1168,7 +1264,129 @@ function renderOrchestrationTemplates() {
   `;
 }
 
+function renderWorkflowScenarioForm(form = {}, { open = false } = {}) {
+  return `
+    <details class="orch-workflow-form" data-workflow-form="${escapeHtml(form.id)}" ${open ? "open" : ""}>
+      <summary>
+        <span>
+          <strong>${escapeHtml(form.label)}</strong>
+          <em>${escapeHtml(form.desc)}</em>
+        </span>
+        <small>${escapeHtml(getArtifactTypeLabel(form.artifactType))}</small>
+      </summary>
+      <div class="orch-workflow-fields">
+        ${(form.fields ?? []).map((field) => renderWorkflowScenarioField(field)).join("")}
+      </div>
+      <div class="orch-workflow-instructions">
+        ${(form.instructions ?? []).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+      </div>
+      <div class="orch-workflow-actions">
+        <button type="button" data-workflow-form-action="fill" data-workflow-form-id="${escapeHtml(form.id)}">목표 만들기</button>
+        <button type="button" data-workflow-form-action="run" data-workflow-form-id="${escapeHtml(form.id)}">바로 실행</button>
+      </div>
+    </details>
+  `;
+}
+
+function renderWorkflowScenarioField(field = {}) {
+  const control = field.type === "textarea"
+    ? `<textarea rows="3" data-workflow-field="${escapeHtml(field.name)}" placeholder="${escapeHtml(field.placeholder || "")}"></textarea>`
+    : `<input type="${escapeHtml(field.type || "text")}" data-workflow-field="${escapeHtml(field.name)}" placeholder="${escapeHtml(field.placeholder || "")}" />`;
+  return `
+    <label class="${field.type === "textarea" ? "is-wide" : ""}">
+      <span>${escapeHtml(field.label)}</span>
+      ${control}
+    </label>
+  `;
+}
+
+function getWorkflowScenarioForm(formId = "") {
+  return workflowScenarioForms.find((form) => form.id === formId) ?? null;
+}
+
+function getWorkflowScenarioFormElement(formId = "") {
+  return [...refs.orchestrationTemplates.querySelectorAll("[data-workflow-form]")]
+    .find((item) => item.dataset.workflowForm === formId) ?? null;
+}
+
+function collectWorkflowScenarioValues(form = {}) {
+  const formElement = getWorkflowScenarioFormElement(form.id);
+  if (!formElement) return {};
+  return Object.fromEntries((form.fields ?? []).map((field) => {
+    const control = formElement.querySelector(`[data-workflow-field="${field.name}"]`);
+    return [field.name, String(control?.value ?? "").trim()];
+  }));
+}
+
+function buildWorkflowScenarioGoal(form = {}, values = {}) {
+  const filledCount = Object.values(values).filter(Boolean).length;
+  if (!filledCount) return "";
+  const fieldLines = (form.fields ?? []).map((field) => {
+    const value = values[field.name] || "확인 필요";
+    return `- ${field.label}: ${value}`;
+  });
+  const instructionLines = (form.instructions ?? []).map((item) => `- ${item}`);
+  return [
+    `[${form.label} 자동화 요청]`,
+    "",
+    "입력값",
+    ...fieldLines,
+    "",
+    "처리 지시",
+    ...instructionLines,
+    "- 결과는 바로 검토할 수 있게 제목, 요약, 세부 항목, 확인 필요 항목, 다음 실행 액션으로 나눠 작성한다.",
+    "- 할 일판에 옮길 수 있는 업무 단위와 담당 직원 후보를 함께 제안한다.",
+    "- 실제 날짜, 수치, 링크, 개인정보, 외부 공개 범위는 지어내지 말고 확인 필요로 표시한다.",
+  ].join("\n").slice(0, 4000);
+}
+
+function applyWorkflowScenarioForm(formId = "", { run = false } = {}) {
+  if (orchestrationUi.isRunning || refs.orchestrationGoal.disabled) {
+    showToast("현재 실행 중인 오케스트레이션이 끝난 뒤 사용할 수 있습니다.");
+    return;
+  }
+  const form = getWorkflowScenarioForm(formId);
+  if (!form) {
+    showToast("업무 입력 폼을 찾지 못했습니다.");
+    return;
+  }
+  const values = collectWorkflowScenarioValues(form);
+  const goal = buildWorkflowScenarioGoal(form, values);
+  if (!goal) {
+    const firstField = getWorkflowScenarioFormElement(form.id)?.querySelector("[data-workflow-field]");
+    firstField?.focus();
+    showToast(`${form.label}에 최소 1개 항목을 입력하세요.`);
+    return;
+  }
+
+  refs.orchestrationGoal.value = goal;
+  refs.orchestrationGoal.dataset.scenarioId = form.id;
+  setPendingRunSource({
+    type: "scenario",
+    label: `${form.label} 입력 폼`,
+    scenarioId: form.id,
+  });
+  refs.orchestrationGoal.focus();
+  showToast(run ? `${form.label} 입력값으로 실행을 시작합니다.` : `${form.label} 목표를 만들었습니다. 필요하면 수정 후 실행하세요.`);
+  if (run) refs.orchestrationForm.requestSubmit();
+}
+
+function handleWorkflowScenarioFormKeydown(event) {
+  if (event.key !== "Enter") return;
+  if (!event.target.closest("[data-workflow-field]")) return;
+  if (event.target.tagName === "TEXTAREA") return;
+  event.preventDefault();
+}
+
 async function handleOrchestrationTemplateClick(event) {
+  const workflowAction = event.target.closest("[data-workflow-form-action]");
+  if (workflowAction) {
+    applyWorkflowScenarioForm(workflowAction.dataset.workflowFormId, {
+      run: workflowAction.dataset.workflowFormAction === "run",
+    });
+    return;
+  }
+
   const savedAction = event.target.closest("[data-saved-template-action]");
   if (savedAction) {
     const template = findSavedAutomationTemplate(savedAction.dataset.savedTemplateId);
