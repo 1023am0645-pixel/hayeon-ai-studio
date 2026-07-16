@@ -34,6 +34,7 @@ let automationHealthStatus = null;
 let automationOpsWarning = "";
 let remoteAuditEvents = [];
 let remoteOpsTasks = [];
+let remoteOpsRuns = [];
 let automationOpsRefreshTimer = 0;
 let remoteToolActionsLoading = false;
 let remoteToolActionsLoadedRunId = "";
@@ -374,6 +375,7 @@ function getInitialOrchState() {
     scenarioId: "",
     scenarioLabel: "",
     artifactType: "markdown",
+    runSource: { type: "manual", label: "직접 입력" },
     remoteRunId: "",
     remoteStorage: "local",
     remoteError: "",
@@ -442,6 +444,7 @@ function hydrateOrch(savedOrch = {}) {
     artifacts: Array.isArray(savedOrch.artifacts) ? savedOrch.artifacts : [],
     toolActions: Array.isArray(savedOrch.toolActions) ? savedOrch.toolActions : [],
     logs: Array.isArray(savedOrch.logs) ? savedOrch.logs : [],
+    runSource: normalizeOrchestrationRunSource(savedOrch.runSource),
   };
 }
 
@@ -1192,6 +1195,11 @@ async function handleOrchestrationTemplateClick(event) {
   if (!template) return;
   refs.orchestrationGoal.value = template.goal;
   refs.orchestrationGoal.dataset.scenarioId = template.id;
+  setPendingRunSource({
+    type: "scenario",
+    label: template.label,
+    scenarioId: template.id,
+  });
   refs.orchestrationGoal.focus();
   showToast(`${template.label} 시나리오를 입력했습니다. 필요하면 수정 후 실행하세요.`);
 }
@@ -1206,6 +1214,12 @@ function loadAutomationTemplateIntoGoal(template = {}) {
   if (!template?.goal || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
   refs.orchestrationGoal.value = template.goal;
   refs.orchestrationGoal.dataset.scenarioId = "";
+  setPendingRunSource({
+    type: "template",
+    label: template.label,
+    sourceTemplateId: template.id,
+    sourceTemplateLabel: template.label,
+  });
   refs.orchestrationGoal.focus();
   showToast(`${template.label} 템플릿을 입력했습니다. 필요하면 수정 후 실행하세요.`);
 }
@@ -1214,8 +1228,70 @@ function runAutomationTemplateNow(template = {}) {
   if (!template?.goal || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
   refs.orchestrationGoal.value = template.goal;
   refs.orchestrationGoal.dataset.scenarioId = "";
+  setPendingRunSource({
+    type: "template",
+    label: template.label,
+    sourceTemplateId: template.id,
+    sourceTemplateLabel: template.label,
+  });
   refs.orchestrationForm.requestSubmit();
   showToast(`${template.label} 템플릿 실행을 시작합니다.`);
+}
+
+function setPendingRunSource(source = {}) {
+  const dataset = refs.orchestrationGoal?.dataset;
+  if (!dataset) return;
+  dataset.runSourceType = source.type || "";
+  dataset.runSourceLabel = source.label || "";
+  dataset.sourceTemplateId = source.sourceTemplateId || "";
+  dataset.sourceTemplateLabel = source.sourceTemplateLabel || "";
+  dataset.sourceRunId = source.sourceRunId || "";
+  dataset.rerunFromGoal = source.rerunFromGoal || "";
+}
+
+function clearPendingRunSource() {
+  const dataset = refs.orchestrationGoal?.dataset;
+  if (!dataset) return;
+  delete dataset.runSourceType;
+  delete dataset.runSourceLabel;
+  delete dataset.sourceTemplateId;
+  delete dataset.sourceTemplateLabel;
+  delete dataset.sourceRunId;
+  delete dataset.rerunFromGoal;
+}
+
+function getPendingRunSource({ goal = "", scenario = {} } = {}) {
+  const dataset = refs.orchestrationGoal?.dataset ?? {};
+  const type = dataset.runSourceType || (dataset.scenarioId ? "scenario" : "manual");
+  return normalizeOrchestrationRunSource({
+    type,
+    label: dataset.runSourceLabel || (type === "scenario" ? scenario.label : "직접 입력"),
+    sourceTemplateId: dataset.sourceTemplateId || "",
+    sourceTemplateLabel: dataset.sourceTemplateLabel || "",
+    sourceRunId: dataset.sourceRunId || "",
+    rerunFromGoal: dataset.rerunFromGoal || "",
+    goal,
+  });
+}
+
+function normalizeOrchestrationRunSource(source = {}) {
+  const allowedTypes = new Set(["manual", "scenario", "template", "rerun"]);
+  const type = allowedTypes.has(source.type) ? source.type : "manual";
+  const defaultLabel = {
+    manual: "직접 입력",
+    scenario: "빠른 시나리오",
+    template: "템플릿 실행",
+    rerun: "재실행",
+  }[type];
+  return {
+    type,
+    label: String(source.label || defaultLabel).slice(0, 120),
+    sourceTemplateId: String(source.sourceTemplateId || "").slice(0, 120),
+    sourceTemplateLabel: String(source.sourceTemplateLabel || "").slice(0, 120),
+    sourceRunId: String(source.sourceRunId || "").slice(0, 120),
+    rerunFromGoal: String(source.rerunFromGoal || "").slice(0, 500),
+    goal: String(source.goal || "").slice(0, 500),
+  };
 }
 
 function buildAutomationTemplateMarkdown(template = {}) {
@@ -1261,6 +1337,7 @@ async function handleOrchestrationSubmit(event) {
   const goal = String(new FormData(event.target).get("goal") ?? "").trim();
   if (!goal) return;
   const scenario = resolveOrchestrationScenario(goal, refs.orchestrationGoal.dataset.scenarioId);
+  const runSource = getPendingRunSource({ goal, scenario });
 
   orchestrationUi.isRunning = true;
   state.orch = {
@@ -1270,12 +1347,13 @@ async function handleOrchestrationSubmit(event) {
     scenarioId: scenario.id,
     scenarioLabel: scenario.label,
     artifactType: scenario.artifactType,
+    runSource,
     startedAt: Date.now(),
   };
   appendOrchestrationLog({
     phase: "run-start",
     name: "매니저",
-    message: "오케스트레이션 실행을 시작했습니다.",
+    message: `오케스트레이션 실행을 시작했습니다. 출처: ${runSource.label}`,
   });
   saveState();
   refs.orchestrationResults.innerHTML = "";
@@ -1325,6 +1403,7 @@ async function handleOrchestrationSubmit(event) {
     submitButton.disabled = false;
     refs.orchestrationGoal.disabled = false;
     delete refs.orchestrationGoal.dataset.scenarioId;
+    clearPendingRunSource();
     renderOrchestrationBadge();
   }
 }
@@ -1385,10 +1464,33 @@ function renderOrchestrationHistoryMessage(message) {
   refs.refreshOrchestrationHistoryButton?.addEventListener("click", loadOrchestrationHistory);
 }
 
+function getAutomationRunSourceInfo(metadata = {}) {
+  const runSource = metadata.runSource && typeof metadata.runSource === "object"
+    ? metadata.runSource
+    : {};
+  const source = normalizeOrchestrationRunSource({
+    type: metadata.runSourceType || runSource.type || (metadata.sourceRunId ? "rerun" : metadata.sourceTemplateId ? "template" : metadata.scenarioId ? "scenario" : "manual"),
+    label: metadata.runSourceLabel || runSource.label || "",
+    sourceTemplateId: metadata.sourceTemplateId || runSource.sourceTemplateId || "",
+    sourceTemplateLabel: metadata.sourceTemplateLabel || runSource.sourceTemplateLabel || "",
+    sourceRunId: metadata.sourceRunId || runSource.sourceRunId || "",
+    rerunFromGoal: metadata.rerunFromGoal || runSource.rerunFromGoal || "",
+    goal: runSource.goal || "",
+  });
+  const label = {
+    manual: "직접 입력",
+    scenario: "빠른 시나리오",
+    template: "템플릿 실행",
+    rerun: "재실행",
+  }[source.type] ?? "직접 입력";
+  return { source, label };
+}
+
 function renderOrchestrationHistory(runs) {
   if (!refs.orchestrationHistory) return;
   const rows = runs.map((run) => {
     const metadata = safeParseJson(run.metadata_json);
+    const sourceInfo = getAutomationRunSourceInfo(metadata);
     const status = String(run.status ?? "queued");
     const statusLabel = getOrchestrationStatusLabel(status);
     const itemCount = Number(run.item_count ?? 0);
@@ -1412,7 +1514,10 @@ function renderOrchestrationHistory(runs) {
           data-orch-run-action="load"
           data-orch-run-id="${escapeHtml(run.id)}"
         >
-          <span>${escapeHtml(statusLabel)}</span>
+          <div class="orch-history-badges">
+            <span>${escapeHtml(statusLabel)}</span>
+            <span class="orch-history-source is-${escapeHtml(sourceInfo.source.type)}">${escapeHtml(sourceInfo.label)}</span>
+          </div>
           <strong>${escapeHtml(run.goal || "목표 없음")}</strong>
           <em>${escapeHtml(meta || "기록 정보 없음")}</em>
         </button>
@@ -1470,11 +1575,12 @@ async function loadAutomationOps({ force = false } = {}) {
   renderAutomationOpsMessage("자동화 운영 상태를 불러오는 중입니다...");
   renderAdminAutomationStatus("자동화 서버 상태를 확인하는 중입니다.");
   try {
-    const [healthResult, connectorResult, auditResult, taskResult] = await Promise.allSettled([
+    const [healthResult, connectorResult, auditResult, taskResult, runResult] = await Promise.allSettled([
       automationStore.getHealth ? automationStore.getHealth() : Promise.resolve(null),
       automationStore.getConnectors(),
       automationStore.listAuditEvents({ limit: 8 }),
       automationStore.listTasks ? automationStore.listTasks({ limit: 8 }) : Promise.resolve({ tasks: [] }),
+      automationStore.listRuns ? automationStore.listRuns({ limit: 20 }) : Promise.resolve({ runs: [] }),
     ]);
     if (connectorResult.status === "rejected") throw connectorResult.reason;
     automationHealthStatus = healthResult.status === "fulfilled" ? (healthResult.value ?? null) : null;
@@ -1485,6 +1591,9 @@ async function loadAutomationOps({ force = false } = {}) {
     remoteOpsTasks = taskResult.status === "fulfilled" && Array.isArray(taskResult.value?.tasks)
       ? taskResult.value.tasks.map(hydrateRemoteTask).filter((task) => task.id && task.title).slice(0, 8)
       : [];
+    remoteOpsRuns = runResult.status === "fulfilled" && Array.isArray(runResult.value?.runs)
+      ? runResult.value.runs.slice(0, 20)
+      : [];
     automationOpsWarning = "";
     if (auditResult.status === "rejected") {
       automationOpsWarning = automationStore.isStorageMissing?.(auditResult.reason)
@@ -1494,6 +1603,8 @@ async function loadAutomationOps({ force = false } = {}) {
       automationOpsWarning = "자동화 health 상태를 확인하지 못했습니다.";
     } else if (taskResult.status === "rejected") {
       automationOpsWarning = "최근 자동화 업무를 불러오지 못했습니다.";
+    } else if (runResult.status === "rejected") {
+      automationOpsWarning = "최근 실행 기록을 불러오지 못했습니다.";
     }
     syncAutomationPolicyFromConnectorStatus(automationConnectorStatus);
     automationOpsLoaded = true;
@@ -1573,6 +1684,7 @@ function renderAutomationOps() {
   const auditRows = renderAutomationAuditRows(remoteAuditEvents);
   const setupGuide = renderAutomationConnectorSetupGuide(tools, background);
   const nextSteps = renderAutomationOpsNextSteps(automationHealthStatus, tools, background, policy);
+  const sourceInsights = renderAutomationRunSourceInsights(remoteOpsRuns);
 
   refs.automationOps.innerHTML = `
     <div class="automation-ops-head">
@@ -1605,6 +1717,7 @@ function renderAutomationOps() {
       <p>${escapeHtml(policy.note || "외부 도구 쓰기는 명시 승인 후 단계적으로 열어갑니다.")}</p>
     </div>
     ${nextSteps}
+    ${sourceInsights}
     <div class="automation-audit-head">
       <strong>최근 자동화 업무</strong>
       <span>${remoteOpsTasks.length ? `${remoteOpsTasks.length}건` : "기록 없음"}</span>
@@ -1804,6 +1917,82 @@ function renderAutomationOpsNextSteps(health = {}, tools = {}, background = {}, 
           </li>
         `).join("")}
       </ol>
+    </div>
+  `;
+}
+
+function getAutomationRunSourceStats(runs = []) {
+  const sourceCounts = { manual: 0, scenario: 0, template: 0, rerun: 0 };
+  const repeatMap = new Map();
+  let successful = 0;
+
+  runs.forEach((run) => {
+    const metadata = safeParseJson(run.metadata_json);
+    const { source } = getAutomationRunSourceInfo(metadata);
+    sourceCounts[source.type] = (sourceCounts[source.type] ?? 0) + 1;
+    const itemCount = Number(run.item_count ?? 0);
+    const doneCount = Number(run.done_count ?? 0);
+    const errorCount = Number(run.error_count ?? 0);
+    const isSuccess = String(run.status ?? "") === "done" || (itemCount > 0 && doneCount >= itemCount && errorCount === 0);
+    if (isSuccess) successful += 1;
+
+    const repeatKey = source.sourceTemplateId || source.sourceRunId || String(run.goal || "").slice(0, 120);
+    if (!repeatKey) return;
+    const previous = repeatMap.get(repeatKey) ?? {
+      key: repeatKey,
+      label: source.sourceTemplateLabel || source.label || String(run.goal || "자동화 실행").slice(0, 80),
+      goal: String(run.goal || "").slice(0, 120),
+      count: 0,
+      done: 0,
+    };
+    previous.count += 1;
+    if (isSuccess) previous.done += 1;
+    repeatMap.set(repeatKey, previous);
+  });
+
+  const total = runs.length;
+  const topRepeats = [...repeatMap.values()]
+    .sort((a, b) => b.count - a.count || b.done - a.done)
+    .slice(0, 5);
+  return {
+    total,
+    sourceCounts,
+    successful,
+    successRate: total ? Math.round((successful / total) * 100) : 0,
+    topRepeats,
+  };
+}
+
+function renderAutomationRunSourceInsights(runs = []) {
+  if (!Array.isArray(runs) || !runs.length) return "";
+  const stats = getAutomationRunSourceStats(runs);
+  const sourceLabels = {
+    manual: "직접",
+    scenario: "시나리오",
+    template: "템플릿",
+    rerun: "재실행",
+  };
+  return `
+    <div class="automation-source-insights" aria-label="자동화 실행 출처 인사이트">
+      <div class="automation-source-insights-head">
+        <strong>반복 실행 인사이트</strong>
+        <span>최근 ${stats.total}회 · 완료율 ${stats.successRate}%</span>
+      </div>
+      <div class="automation-source-pills">
+        ${Object.entries(sourceLabels).map(([key, label]) => `
+          <span class="is-${escapeHtml(key)}"><strong>${Number(stats.sourceCounts[key] ?? 0)}</strong><em>${escapeHtml(label)}</em></span>
+        `).join("")}
+      </div>
+      ${stats.topRepeats.length ? `
+        <ol>
+          ${stats.topRepeats.map((item) => `
+            <li>
+              <strong>${escapeHtml(item.label || item.goal || "자동화 실행")}</strong>
+              <span>${item.count}회 실행 · ${item.done}회 완료</span>
+            </li>
+          `).join("")}
+        </ol>
+      ` : "<p>반복 실행 후보가 아직 충분하지 않습니다.</p>"}
     </div>
   `;
 }
@@ -2199,6 +2388,27 @@ function buildAutomationOpsReport() {
     lines.push(`${index + 1}. ${step.title}: ${step.text}`);
   });
 
+  lines.push("", "## 실행 출처 요약");
+  if (remoteOpsRuns.length) {
+    const stats = getAutomationRunSourceStats(remoteOpsRuns);
+    lines.push(
+      `- 최근 실행 기록: ${stats.total}건`,
+      `- 완료율: ${stats.successRate}% (${stats.successful}/${stats.total})`,
+      `- 직접 입력: ${Number(stats.sourceCounts.manual ?? 0)}건`,
+      `- 빠른 시나리오: ${Number(stats.sourceCounts.scenario ?? 0)}건`,
+      `- 템플릿 실행: ${Number(stats.sourceCounts.template ?? 0)}건`,
+      `- 재실행: ${Number(stats.sourceCounts.rerun ?? 0)}건`,
+      "",
+      "### 반복 실행 후보 TOP 5"
+    );
+    stats.topRepeats.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item.label || item.goal || "자동화 실행"} · ${item.count}회 실행 · ${item.done}회 완료`);
+    });
+    if (!stats.topRepeats.length) lines.push("- 반복 실행 후보가 아직 충분하지 않습니다.");
+  } else {
+    lines.push("- 최근 실행 기록을 불러오지 못했거나 기록이 없습니다.");
+  }
+
   lines.push("", "## 외부 도구 커넥터");
   ["calendar", "mail", "drive", "notion"].forEach((key) => {
     const status = tools[key] ?? {};
@@ -2352,6 +2562,12 @@ async function rerunStoredOrchestrationRun(runId) {
     const metadata = safeParseJson(run.metadata_json);
     refs.orchestrationGoal.value = goal;
     refs.orchestrationGoal.dataset.scenarioId = metadata.scenarioId ?? "";
+    setPendingRunSource({
+      type: "rerun",
+      label: "재실행",
+      sourceRunId: run.id ?? runId,
+      rerunFromGoal: goal,
+    });
     refs.orchestrationForm.requestSubmit();
     showToast("이전 실행 목표로 다시 시작합니다.");
   } catch (error) {
@@ -2438,6 +2654,7 @@ function hydrateOrchestrationFromRemoteRun(data) {
     scenarioId: runMetadata.scenarioId || restoredScenario.id,
     scenarioLabel: runMetadata.scenarioLabel || restoredScenario.label,
     artifactType: runMetadata.artifactType || restoredScenario.artifactType,
+    runSource: getAutomationRunSourceInfo(runMetadata).source,
     remoteRunId: runId,
     remoteStorage: "d1",
     startedAt: Date.parse(run.started_at || run.created_at) || 0,
@@ -2797,12 +3014,20 @@ async function createRemoteOrchestrationRun(goal) {
 }
 
 function getOrchestrationRunMetadata(extra = {}) {
+  const runSource = normalizeOrchestrationRunSource(state.orch.runSource);
   return {
     app: "hayeon-ai-studio",
     scenarioId: state.orch.scenarioId ?? "",
     scenarioLabel: state.orch.scenarioLabel ?? "",
     artifactType: state.orch.artifactType ?? "markdown",
     artifactTypeLabel: getArtifactTypeLabel(state.orch.artifactType ?? "markdown"),
+    runSource,
+    runSourceType: runSource.type,
+    runSourceLabel: runSource.label,
+    sourceTemplateId: runSource.sourceTemplateId,
+    sourceTemplateLabel: runSource.sourceTemplateLabel,
+    sourceRunId: runSource.sourceRunId,
+    rerunFromGoal: runSource.rerunFromGoal,
     ...extra,
   };
 }
@@ -5952,6 +6177,7 @@ function resetAutomationOpsCache() {
   automationOpsWarning = "";
   remoteAuditEvents = [];
   remoteOpsTasks = [];
+  remoteOpsRuns = [];
   renderAutomationOps();
   renderAdminAutomationStatus();
 }
