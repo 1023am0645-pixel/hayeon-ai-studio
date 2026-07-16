@@ -155,6 +155,13 @@ function upsertTemplate(template) {
   });
 }
 
+function deleteTemplate(templateId) {
+  if (!templateId) return Promise.resolve(null);
+  return requestAutomation(`/api/automation/templates/${encodeURIComponent(templateId)}`, {
+    method: "DELETE",
+  });
+}
+
 function listAuditEvents({ limit = 40, sourceActionId = "" } = {}) {
   const params = new URLSearchParams();
   params.set("limit", String(Math.min(Math.max(Number(limit) || 40, 1), 120)));
@@ -240,6 +247,7 @@ window.HayeonAutomationStore = {
   executeToolAction,
   listTemplates,
   upsertTemplate,
+  deleteTemplate,
   listAuditEvents,
   createAuditEvent,
   getConnectors,

@@ -1129,32 +1129,54 @@ function renderOrchestrationTemplates() {
       </div>
       <div class="orch-template-list saved-template-list">
         ${savedTemplates.map((template) => `
-          <button
+          <article
             class="orch-template-chip is-saved"
-            type="button"
             data-saved-template-id="${escapeHtml(template.id)}"
             data-artifact-type="${escapeHtml(template.artifactType ?? "markdown")}"
           >
-            <strong>${escapeHtml(template.label)}</strong>
-            <span>${escapeHtml(template.desc)}</span>
-            <em>${escapeHtml(getToolActionTypeLabel(template.actionType))}</em>
-          </button>
+            <button
+              class="orch-template-main"
+              type="button"
+              data-saved-template-action="load"
+              data-saved-template-id="${escapeHtml(template.id)}"
+            >
+              <strong>${escapeHtml(template.label)}</strong>
+              <span>${escapeHtml(template.desc)}</span>
+              <em>${escapeHtml(getToolActionTypeLabel(template.actionType))}</em>
+            </button>
+            <div class="orch-template-actions" aria-label="${escapeHtml(template.label)} 템플릿 관리">
+              <button type="button" data-saved-template-action="copy" data-saved-template-id="${escapeHtml(template.id)}">복사</button>
+              <button type="button" data-saved-template-action="delete" data-saved-template-id="${escapeHtml(template.id)}">삭제</button>
+            </div>
+          </article>
         `).join("")}
       </div>
     ` : ""}
   `;
 }
 
-function handleOrchestrationTemplateClick(event) {
-  const savedButton = event.target.closest("[data-saved-template-id]");
-  if (savedButton && !orchestrationUi.isRunning && !refs.orchestrationGoal.disabled) {
-    const template = hydrateAutomationTemplates(state.automationTemplates)
-      .find((item) => item.id === savedButton.dataset.savedTemplateId);
+async function handleOrchestrationTemplateClick(event) {
+  const savedAction = event.target.closest("[data-saved-template-action]");
+  if (savedAction) {
+    const template = findSavedAutomationTemplate(savedAction.dataset.savedTemplateId);
     if (!template) return;
-    refs.orchestrationGoal.value = template.goal;
-    refs.orchestrationGoal.dataset.scenarioId = "";
-    refs.orchestrationGoal.focus();
-    showToast(`${template.label} 템플릿을 입력했습니다. 필요하면 수정 후 실행하세요.`);
+    const action = savedAction.dataset.savedTemplateAction;
+    if (action === "copy") {
+      try {
+        await copyTextToClipboard(buildAutomationTemplateMarkdown(template));
+        showToast(`${template.label} 템플릿을 복사했습니다.`);
+      } catch {
+        showToast("브라우저 복사 권한이 막혀 템플릿을 복사하지 못했습니다.");
+      }
+      return;
+    }
+    if (action === "delete") {
+      deleteSavedAutomationTemplate(template);
+      return;
+    }
+    if (!orchestrationUi.isRunning && !refs.orchestrationGoal.disabled) {
+      loadAutomationTemplateIntoGoal(template);
+    }
     return;
   }
 
@@ -1166,6 +1188,56 @@ function handleOrchestrationTemplateClick(event) {
   refs.orchestrationGoal.dataset.scenarioId = template.id;
   refs.orchestrationGoal.focus();
   showToast(`${template.label} 시나리오를 입력했습니다. 필요하면 수정 후 실행하세요.`);
+}
+
+function findSavedAutomationTemplate(templateId = "") {
+  if (!templateId) return null;
+  return hydrateAutomationTemplates(state.automationTemplates)
+    .find((item) => item.id === templateId) ?? null;
+}
+
+function loadAutomationTemplateIntoGoal(template = {}) {
+  if (!template?.goal || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
+  refs.orchestrationGoal.value = template.goal;
+  refs.orchestrationGoal.dataset.scenarioId = "";
+  refs.orchestrationGoal.focus();
+  showToast(`${template.label} 템플릿을 입력했습니다. 필요하면 수정 후 실행하세요.`);
+}
+
+function buildAutomationTemplateMarkdown(template = {}) {
+  const metaLines = [
+    `- 유형: ${getToolActionTypeLabel(template.actionType)}`,
+    `- 설명: ${template.desc || "저장된 자동화 후보"}`,
+    template.createdAt ? `- 저장 시각: ${new Date(template.createdAt).toLocaleString("ko-KR")}` : "",
+    template.sourceActionId ? `- 원본 후보: ${template.sourceActionId}` : "",
+  ].filter(Boolean);
+  return [
+    `# ${template.label || "자동화 템플릿"}`,
+    "",
+    ...metaLines,
+    "",
+    "## 실행 목표",
+    "",
+    template.goal || "저장된 목표가 없습니다.",
+  ].join("\n").replace(/\n{4,}/g, "\n\n\n").trimEnd() + "\n";
+}
+
+function deleteSavedAutomationTemplate(template = {}) {
+  if (!template?.id) return;
+  const confirmed = window.confirm(`${template.label || "자동화 템플릿"} 템플릿을 삭제할까요?`);
+  if (!confirmed) return;
+
+  state.automationTemplates = hydrateAutomationTemplates(state.automationTemplates)
+    .filter((item) => item.id !== template.id);
+  saveState();
+  renderOrchestrationTemplates();
+
+  if (automationStore?.deleteTemplate && isAdminLoggedIn()) {
+    void automationStore.deleteTemplate(template.id)
+      .then(() => scheduleAutomationOpsRefresh())
+      .catch(handleRemoteTemplateSyncError);
+  }
+  showToast(`${template.label || "자동화 템플릿"} 템플릿을 삭제했습니다.`);
 }
 
 async function handleOrchestrationSubmit(event) {

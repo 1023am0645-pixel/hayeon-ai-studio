@@ -109,6 +109,11 @@ async function handleAutomationRoute(request, env, url) {
       }
     }
 
+    const templateMatch = url.pathname.match(/^\/api\/automation\/templates\/([^/]+)$/);
+    if (templateMatch && request.method === "DELETE") {
+      return deleteAutomationTemplate(env.AGENT_DB, templateMatch[1], context.requestId);
+    }
+
     if (url.pathname === "/api/automation/audit-events") {
       if (request.method === "GET") {
         return listAutomationAuditEvents(env.AGENT_DB, url, context.requestId);
@@ -1078,6 +1083,21 @@ async function upsertAutomationTemplate(db, body, requestId) {
     data: {
       template: { id, label, description, goal, artifactType, actionType, sourceActionId, updatedAt: now },
     },
+    requestId,
+  });
+}
+
+async function deleteAutomationTemplate(db, templateId, requestId) {
+  await ensureAutomationTemplateAuditTables(db);
+  const id = normalizeId(templateId, 120);
+  if (!id) return agentError("bad_automation_template", 400, requestId);
+
+  const result = await db.prepare("DELETE FROM automation_templates WHERE id = ?").bind(id).run();
+  const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
+  return json({
+    ok: true,
+    text: "",
+    data: { templateId: id, deleted: changes > 0 },
     requestId,
   });
 }

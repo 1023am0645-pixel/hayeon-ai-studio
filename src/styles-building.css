@@ -6171,6 +6171,63 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 900;
 }
 
+.orch-template-chip.is-saved {
+  cursor: default;
+}
+
+.orch-template-main {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.orch-template-main:hover,
+.orch-template-main:focus-visible {
+  outline: none;
+}
+
+.orch-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.orch-template-actions button {
+  min-height: 24px;
+  padding: 4px 8px;
+  color: #5d4470;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(137, 96, 172, 0.18);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.orch-template-actions button:hover,
+.orch-template-actions button:focus-visible {
+  color: #3e2852;
+  background: rgba(247, 237, 255, 0.96);
+  outline: none;
+}
+
+.orch-template-actions button[data-saved-template-action="delete"] {
+  color: #8a3b2f;
+  border-color: rgba(191, 95, 54, 0.18);
+}
+
+.orch-template-actions button[data-saved-template-action="delete"]:hover,
+.orch-template-actions button[data-saved-template-action="delete"]:focus-visible {
+  color: #6e2e24;
+  background: rgba(255, 232, 226, 0.94);
+}
+
 .orchestration-form button:disabled,
 .orchestration-form textarea:disabled {
   cursor: wait;
