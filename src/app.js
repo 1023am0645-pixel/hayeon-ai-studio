@@ -2670,6 +2670,14 @@ function handleOrchestrationAnswerToggle(event) {
 }
 
 async function handleToolActionControl(event) {
+  const bulkButton = event.target.closest("[data-tool-action-bulk]");
+  if (bulkButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    await handleToolActionBulk(bulkButton.dataset.toolActionBulk);
+    return;
+  }
+
   const button = event.target.closest("[data-tool-action-control]");
   if (!button) return;
   event.preventDefault();
@@ -2680,12 +2688,7 @@ async function handleToolActionControl(event) {
   const command = button.dataset.toolActionControl;
 
   if (command === "approve" || command === "reject") {
-    action.status = command === "approve" ? "approved" : "rejected";
-    action.approvalNote = command === "approve"
-      ? "운영자가 실행 후보로 승인했습니다. 외부 실행은 아직 연결되지 않았습니다."
-      : "운영자가 보류했습니다.";
-    action.updatedAt = new Date().toISOString();
-    appendToolActionAuditLog(action, command === "approve" ? "approved" : "rejected");
+    setToolActionDecision(action, command === "approve" ? "approved" : "rejected");
     updateRemoteToolAction(action);
     saveState();
     renderOrchestrationResults(buildStoredOrchestrationResult());
@@ -2744,6 +2747,64 @@ async function handleToolActionControl(event) {
   }
 }
 
+function setToolActionDecision(action = {}, status = "approved") {
+  const normalizedStatus = status === "rejected" ? "rejected" : "approved";
+  action.status = normalizedStatus;
+  action.approvalNote = normalizedStatus === "approved"
+    ? "운영자가 실행 후보로 승인했습니다. 외부 실행은 아직 연결되지 않았습니다."
+    : "운영자가 보류했습니다.";
+  action.updatedAt = new Date().toISOString();
+  appendToolActionAuditLog(action, normalizedStatus);
+  return action;
+}
+
+async function handleToolActionBulk(command = "") {
+  const actions = state.orch.toolActions ?? [];
+
+  if (command === "approve-all") {
+    const targets = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending");
+    if (!targets.length) {
+      showToast("승인 대기 중인 자동화 후보가 없습니다.");
+      return;
+    }
+    targets.forEach((action) => {
+      setToolActionDecision(action, "approved");
+      updateRemoteToolAction(action);
+    });
+    saveState();
+    renderOrchestrationResults(buildStoredOrchestrationResult());
+    const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
+    if (openAction) openToolActionPreview(openAction);
+    showToast(`${targets.length}개 자동화 후보를 승인했습니다.`);
+    return;
+  }
+
+  if (command === "dry-run-all") {
+    const targets = actions.filter((action) => ["pending", "approved"].includes(normalizeToolActionStatus(action.status)));
+    if (!targets.length) {
+      showToast("리허설할 자동화 후보가 없습니다.");
+      return;
+    }
+    for (const action of targets) {
+      await runToolActionDryRun(action, { silent: true });
+    }
+    showToast(`${targets.length}개 자동화 후보 리허설을 완료했습니다.`);
+    return;
+  }
+
+  if (command === "execute-approved") {
+    const targets = actions.filter((action) => normalizeToolActionStatus(action.status) === "approved");
+    if (!targets.length) {
+      showToast("실행 점검할 승인 후보가 없습니다.");
+      return;
+    }
+    for (const action of targets) {
+      await attemptToolActionExecution(action, { silent: true });
+    }
+    showToast(`${targets.length}개 승인 후보 실행 점검을 완료했습니다.`);
+  }
+}
+
 function findToolAction(actionId) {
   return (state.orch.toolActions ?? []).find((action) => action.id === actionId) ?? null;
 }
@@ -2777,7 +2838,7 @@ function canFallbackToolActionServerError(error) {
     || error?.status === 405;
 }
 
-async function runToolActionDryRun(action = {}) {
+async function runToolActionDryRun(action = {}, options = {}) {
   if (!action?.id) return;
   if (automationStore?.runToolActionDryRun && isAdminLoggedIn()) {
     try {
@@ -2793,12 +2854,12 @@ async function runToolActionDryRun(action = {}) {
       renderOrchestrationResults(buildStoredOrchestrationResult());
       scheduleAutomationOpsRefresh();
       if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-      showToast("서버 안전 모드로 자동화 리허설 결과를 저장했습니다.");
+      if (!options.silent) showToast("서버 안전 모드로 자동화 리허설 결과를 저장했습니다.");
       return;
     } catch (error) {
       if (!canFallbackToolActionServerError(error)) {
         console.warn("server dry-run failed:", error);
-        showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "서버 리허설이 실패해 로컬 리허설로 전환합니다.");
+        if (!options.silent) showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "서버 리허설이 실패해 로컬 리허설로 전환합니다.");
       }
     }
   }
@@ -2816,14 +2877,14 @@ async function runToolActionDryRun(action = {}) {
   saveState();
   renderOrchestrationResults(buildStoredOrchestrationResult());
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-  showToast("외부 전송 없이 자동화 리허설 결과를 생성했습니다.");
+  if (!options.silent) showToast("외부 전송 없이 자동화 리허설 결과를 생성했습니다.");
 }
 
-async function attemptToolActionExecution(action = {}) {
+async function attemptToolActionExecution(action = {}, options = {}) {
   if (!action?.id) return;
   const status = normalizeToolActionStatus(action.status);
   if (status !== "approved") {
-    showToast("승인된 자동화 후보만 실행 점검할 수 있습니다.");
+    if (!options.silent) showToast("승인된 자동화 후보만 실행 점검할 수 있습니다.");
     return;
   }
 
@@ -2842,12 +2903,12 @@ async function attemptToolActionExecution(action = {}) {
       renderOrchestrationResults(buildStoredOrchestrationResult());
       scheduleAutomationOpsRefresh();
       if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-      showToast(attempt.ok ? "서버에서 자동화 후보를 실제 실행했습니다." : "서버 안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
+      if (!options.silent) showToast(attempt.ok ? "서버에서 자동화 후보를 실제 실행했습니다." : "서버 안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
       return;
     } catch (error) {
       if (!canFallbackToolActionServerError(error)) {
         console.warn("server execution check failed:", error);
-        showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "서버 실행 점검이 실패해 로컬 점검으로 전환합니다.");
+        if (!options.silent) showToast(error?.message === "unauthorized" ? "관리자 로그인이 필요합니다." : "서버 실행 점검이 실패해 로컬 점검으로 전환합니다.");
       }
     }
   }
@@ -2892,7 +2953,7 @@ async function attemptToolActionExecution(action = {}) {
   saveState();
   renderOrchestrationResults(buildStoredOrchestrationResult());
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-  showToast(result.ok ? "자동화 후보를 실제 실행했습니다." : "안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
+  if (!options.silent) showToast(result.ok ? "자동화 후보를 실제 실행했습니다." : "안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
 }
 
 function createBoardTaskFromToolAction(action = {}) {
@@ -3744,6 +3805,17 @@ function getToolActionStatusLabel(status) {
 
 function renderToolActions(actions = []) {
   if (!actions.length) return "";
+  const pendingCount = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending").length;
+  const runnableCount = actions.filter((action) => ["pending", "approved"].includes(normalizeToolActionStatus(action.status))).length;
+  const approvedCount = actions.filter((action) => normalizeToolActionStatus(action.status) === "approved").length;
+  const bulkControls = (pendingCount || runnableCount || approvedCount) ? `
+    <div class="tool-action-bulk-actions" aria-label="자동화 후보 일괄 처리">
+      ${pendingCount ? `<button type="button" data-tool-action-bulk="approve-all">전체 승인 <strong>${pendingCount}</strong></button>` : ""}
+      ${runnableCount ? `<button type="button" data-tool-action-bulk="dry-run-all">전체 리허설 <strong>${runnableCount}</strong></button>` : ""}
+      ${approvedCount ? `<button type="button" data-tool-action-bulk="execute-approved">승인 후보 실행 점검 <strong>${approvedCount}</strong></button>` : ""}
+      <em>외부 전송 없이 서버/로컬 안전 모드로 기록합니다.</em>
+    </div>
+  ` : "";
   const rows = actions.map((action) => {
     const status = normalizeToolActionStatus(action.status);
     const canDecide = status === "pending";
@@ -3791,6 +3863,7 @@ function renderToolActions(actions = []) {
         <span>외부 실행 없이 승인 대기 초안만 생성됩니다.</span>
       </div>
       ${renderAutomationPolicySummary()}
+      ${bulkControls}
       <div class="tool-action-list">${rows}</div>
     </section>
   `;

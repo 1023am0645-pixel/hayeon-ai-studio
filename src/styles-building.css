@@ -7079,6 +7079,59 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   font-weight: 800;
 }
 
+.tool-action-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  background:
+    linear-gradient(135deg, rgba(255, 251, 241, 0.88), rgba(239, 250, 255, 0.76)),
+    rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(63, 126, 168, 0.14);
+  border-radius: 13px;
+}
+
+.tool-action-bulk-actions button {
+  min-height: 30px;
+  padding: 6px 10px;
+  color: #25465b;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(63, 126, 168, 0.18);
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(77, 114, 135, 0.08);
+  font-size: 11px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.tool-action-bulk-actions button:hover,
+.tool-action-bulk-actions button:focus-visible {
+  color: #173448;
+  background: rgba(228, 246, 255, 0.94);
+  outline: none;
+}
+
+.tool-action-bulk-actions button strong {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  align-items: center;
+  justify-content: center;
+  color: #1f5c7b;
+  background: rgba(207, 238, 255, 0.76);
+  border-radius: 999px;
+  font-size: 10px;
+}
+
+.tool-action-bulk-actions em {
+  color: rgba(52, 76, 90, 0.58);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .tool-action-list {
   display: grid;
   gap: 8px;
