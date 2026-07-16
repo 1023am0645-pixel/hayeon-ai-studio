@@ -1775,6 +1775,7 @@ function renderAutomationOps() {
   const taskRows = renderAutomationTaskRows(remoteOpsTasks);
   const auditRows = renderAutomationAuditRows(remoteAuditEvents);
   const setupGuide = renderAutomationConnectorSetupGuide(tools, background);
+  const executionDashboard = renderAutomationExecutionDashboard(remoteOpsRuns, remoteOpsTasks, remoteAuditEvents);
   const nextSteps = renderAutomationOpsNextSteps(automationHealthStatus, tools, background, policy);
   const sourceInsights = renderAutomationRunSourceInsights(remoteOpsRuns);
   const reportPreview = renderAutomationOpsReportPreview();
@@ -1811,6 +1812,7 @@ function renderAutomationOps() {
       <span>${policy.requiresOperatorApproval === false ? "자동 실행 허용" : "실행 전 승인 필요"}</span>
       <p>${escapeHtml(policy.note || "외부 도구 쓰기는 명시 승인 후 단계적으로 열어갑니다.")}</p>
     </div>
+    ${executionDashboard}
     ${nextSteps}
     ${sourceInsights}
     ${reportPreview}
@@ -2265,6 +2267,131 @@ function getAutomationWorkTypeStats(runs = []) {
       avgScore: Math.round(item.totalScore / item.count),
     }))
     .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key) || b.count - a.count);
+}
+
+function getAutomationRunTimestamp(run = {}) {
+  return Date.parse(run.completed_at || run.updated_at || run.created_at) || 0;
+}
+
+function getLocalDayStartTimestamp(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function getAutomationDashboardPeriodRuns(runs = []) {
+  const now = Date.now();
+  const todayStart = getLocalDayStartTimestamp(new Date(now));
+  const sevenDaysAgo = now - (7 * 24 * 60 * 60 * 1000);
+  const todayRuns = runs.filter((run) => {
+    const timestamp = getAutomationRunTimestamp(run);
+    return timestamp >= todayStart;
+  });
+  const weekRuns = runs.filter((run) => {
+    const timestamp = getAutomationRunTimestamp(run);
+    return timestamp >= sevenDaysAgo;
+  });
+  return {
+    todayRuns,
+    weekRuns: weekRuns.length ? weekRuns : runs,
+    hasRecentWeekData: Boolean(weekRuns.length),
+  };
+}
+
+function getAutomationExecutionDashboardStats(runs = [], tasks = [], events = []) {
+  const { todayRuns, weekRuns, hasRecentWeekData } = getAutomationDashboardPeriodRuns(runs);
+  const qualityStats = getAutomationRunQualityStats(weekRuns);
+  const qualities = weekRuns.map((run) => ({ run, quality: getAutomationRunQuality(run) }));
+  const errorRuns = qualities.filter(({ run, quality }) => quality.errorCount > 0 || String(run.status ?? "") === "error");
+  const reviewRuns = qualities.filter(({ quality }) => quality.needsReview && quality.errorCount === 0);
+  const successfulRuns = qualities.filter(({ run, quality }) => (
+    String(run.status ?? "") === "done" &&
+    quality.errorCount === 0 &&
+    quality.completionPercent >= 80
+  ));
+  const pendingTasks = tasks.filter((task) => !["done", "cancelled", "archived"].includes(String(task.status ?? ""))).slice(0, 4);
+  const blockedEvents = events
+    .filter((event) => /blocked|error|fail|차단|오류/i.test([event.event_type, event.status, event.message].filter(Boolean).join(" ")))
+    .slice(0, 3);
+  const total = weekRuns.length;
+  return {
+    todayCount: todayRuns.length,
+    weekCount: weekRuns.length,
+    periodLabel: hasRecentWeekData ? "최근 7일" : "최근 저장 기록",
+    averageCompletion: qualityStats.averageCompletion,
+    averageScore: qualityStats.averageScore,
+    successRate: total ? Math.round((successfulRuns.length / total) * 100) : 0,
+    reviewRate: total ? Math.round((reviewRuns.length / total) * 100) : 0,
+    errorRate: total ? Math.round((errorRuns.length / total) * 100) : 0,
+    successfulRuns,
+    reviewRuns,
+    errorRuns,
+    workTypes: getAutomationWorkTypeStats(weekRuns).slice(0, 5),
+    actionItems: getAutomationExecutionActionItems({ errorRuns, reviewRuns, pendingTasks, blockedEvents }),
+  };
+}
+
+function getAutomationExecutionActionItems({ errorRuns = [], reviewRuns = [], pendingTasks = [], blockedEvents = [] } = {}) {
+  const runItems = [...errorRuns, ...reviewRuns]
+    .sort((a, b) => getAutomationRunTimestamp(b.run) - getAutomationRunTimestamp(a.run))
+    .slice(0, 4)
+    .map(({ run, quality }) => ({
+      tone: quality.errorCount ? "error" : "warn",
+      title: run.goal || "자동화 실행",
+      meta: `${quality.label} ${quality.score} · 완료율 ${quality.completionPercent}% · ${formatRemoteDate(run.completed_at || run.updated_at || run.created_at)}`,
+    }));
+  const taskItems = pendingTasks.slice(0, 3).map((task) => ({
+    tone: "task",
+    title: task.title || "자동화 업무",
+    meta: `${getTaskStatusLabel(task)} · ${formatRemoteDate(task.updatedAt || task.createdAt) || "일정 없음"}`,
+  }));
+  const eventItems = blockedEvents.slice(0, 2).map((event) => ({
+    tone: "error",
+    title: event.title || "실행 점검",
+    meta: `${getAutomationAuditEventLabel(event.event_type)} · ${event.message || formatRemoteDate(event.created_at) || "확인 필요"}`,
+  }));
+  return [...runItems, ...eventItems, ...taskItems].slice(0, 6);
+}
+
+function renderAutomationExecutionDashboard(runs = [], tasks = [], events = []) {
+  const stats = getAutomationExecutionDashboardStats(runs, tasks, events);
+  const workRows = stats.workTypes.length ? stats.workTypes.map((item) => `
+    <span class="${item.needsReview || item.errors ? "is-warn" : "is-good"}">
+      <strong>${escapeHtml(item.label)}</strong>
+      <em>${item.count}회 · 완료율 ${item.avgCompletion}% · 품질 ${item.avgScore}</em>
+    </span>
+  `).join("") : "<p>업무 유형별 실행 기록이 아직 없습니다.</p>";
+  const actionRows = stats.actionItems.length ? stats.actionItems.map((item) => `
+    <li class="is-${escapeHtml(item.tone)}">
+      <strong>${escapeHtml(item.title)}</strong>
+      <span>${escapeHtml(item.meta)}</span>
+    </li>
+  `).join("") : "<li class=\"is-good\"><strong>즉시 처리 항목 없음</strong><span>최근 실행에서 긴급한 오류나 검토 대기가 없습니다.</span></li>";
+
+  return `
+    <div class="automation-execution-dashboard" aria-label="자동화 실행 대시보드">
+      <div class="automation-execution-dashboard-head">
+        <strong>실행 대시보드</strong>
+        <span>${escapeHtml(stats.periodLabel)} · 오늘 ${stats.todayCount}회</span>
+      </div>
+      <div class="automation-execution-metrics">
+        <span><strong>${stats.todayCount}</strong><em>오늘 실행</em></span>
+        <span><strong>${stats.weekCount}</strong><em>${escapeHtml(stats.periodLabel)}</em></span>
+        <span class="is-good"><strong>${stats.successRate}%</strong><em>성공</em></span>
+        <span class="${stats.reviewRate ? "is-warn" : "is-good"}"><strong>${stats.reviewRate}%</strong><em>점검</em></span>
+        <span class="${stats.errorRate ? "is-error" : "is-good"}"><strong>${stats.errorRate}%</strong><em>오류</em></span>
+        <span><strong>${stats.averageScore}</strong><em>품질</em></span>
+      </div>
+      <div class="automation-execution-columns">
+        <section>
+          <strong>업무 유형별 성과</strong>
+          <div class="automation-execution-worktypes">${workRows}</div>
+        </section>
+        <section>
+          <strong>지금 바로 처리할 것</strong>
+          <ol class="automation-execution-actions">${actionRows}</ol>
+        </section>
+      </div>
+    </div>
+  `;
 }
 
 function renderAutomationRunSourceInsights(runs = []) {
@@ -2790,6 +2917,29 @@ function buildAutomationOpsReport() {
   getAutomationOpsNextSteps(health, tools, background, policy).forEach((step, index) => {
     lines.push(`${index + 1}. ${step.title}: ${step.text}`);
   });
+
+  lines.push("", "## 실행 대시보드");
+  if (remoteOpsRuns.length || remoteOpsTasks.length || remoteAuditEvents.length) {
+    const dashboardStats = getAutomationExecutionDashboardStats(remoteOpsRuns, remoteOpsTasks, remoteAuditEvents);
+    lines.push(
+      `- 기간: ${dashboardStats.periodLabel}`,
+      `- 오늘 실행: ${dashboardStats.todayCount}회`,
+      `- 기간 내 실행: ${dashboardStats.weekCount}회`,
+      `- 성공 비율: ${dashboardStats.successRate}%`,
+      `- 점검 비율: ${dashboardStats.reviewRate}%`,
+      `- 오류 비율: ${dashboardStats.errorRate}%`,
+      `- 평균 완료율: ${dashboardStats.averageCompletion}%`,
+      `- 평균 품질: ${dashboardStats.averageScore}/100`,
+      "",
+      "### 지금 바로 처리할 것"
+    );
+    dashboardStats.actionItems.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item.title} · ${item.meta}`);
+    });
+    if (!dashboardStats.actionItems.length) lines.push("- 즉시 처리할 오류나 검토 대기 항목이 없습니다.");
+  } else {
+    lines.push("- 실행 대시보드를 계산할 서버 기록이 아직 없습니다.");
+  }
 
   lines.push("", "## 실행 출처 요약");
   if (remoteOpsRuns.length) {
