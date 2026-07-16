@@ -3139,6 +3139,11 @@ async function handleToolActionControl(event) {
     return;
   }
 
+  if (command === "next-step") {
+    await runToolActionNextStep(action);
+    return;
+  }
+
   if (command === "complete") {
     const confirmed = window.confirm("외부 서비스에는 아무 것도 보내지 않고, 이 자동화 후보를 실행 완료 상태로 표시할까요?");
     if (!confirmed) return;
@@ -3875,6 +3880,57 @@ function getToolActionNextStepLabel(action = {}, { boardTask = null, savedTempla
   return "준비 완료 · 할 일판과 템플릿에서 이어서 처리";
 }
 
+function getToolActionNextStepCommand(action = {}, { boardTask = null, savedTemplate = null } = {}) {
+  const status = normalizeToolActionStatus(action.status);
+  if (status === "rejected" || status === "cancelled") return "";
+  if (status === "pending") return "approve";
+  if (!action.metadata?.dryRun) return "dry-run";
+  if (status === "approved" && !action.metadata?.executionAttempt) return "execute";
+  if (["approved", "executed"].includes(status) && !boardTask) return "task";
+  if (["approved", "executed"].includes(status) && !savedTemplate) return "template";
+  return "";
+}
+
+async function runToolActionNextStep(action = {}) {
+  if (!action?.id) return;
+  const boardTask = getToolActionBoardTask(action);
+  const savedTemplate = getToolActionSavedTemplate(action);
+  const command = getToolActionNextStepCommand(action, { boardTask, savedTemplate });
+
+  if (command === "approve") {
+    setToolActionDecision(action, "approved");
+    updateRemoteToolAction(action);
+    saveState();
+    renderOrchestrationResults(buildStoredOrchestrationResult());
+    if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+    showToast("자동화 후보를 승인했습니다. 다음 단계는 리허설입니다.");
+    return;
+  }
+
+  if (command === "dry-run") {
+    await runToolActionDryRun(action);
+    return;
+  }
+
+  if (command === "execute") {
+    await attemptToolActionExecution(action);
+    return;
+  }
+
+  if (command === "task") {
+    createBoardTaskFromToolAction(action);
+    return;
+  }
+
+  if (command === "template") {
+    saveToolActionAsAutomationTemplate(action);
+    return;
+  }
+
+  showToast("이 자동화 후보는 안전 준비가 완료됐습니다.");
+  if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+}
+
 function renderToolActionPreparationChecklist(action = {}, { boardTask = null, savedTemplate = null } = {}) {
   const status = normalizeToolActionStatus(action.status);
   const dryRun = action.metadata?.dryRun;
@@ -4024,6 +4080,7 @@ function openToolActionPreview(action = {}) {
       </section>
     ` : ""}
     <div class="orch-detail-actions">
+      ${getToolActionNextStepCommand(action, { boardTask, savedTemplate }) ? `<button type="button" class="is-primary-next" data-tool-action-control="next-step" data-tool-action-id="${escapeHtml(action.id)}">${escapeHtml(getToolActionNextStepLabel(action, { boardTask, savedTemplate }).replace(/^다음 버튼:\s*/, ""))}</button>` : ""}
       ${status === "pending" ? `
         <button type="button" data-tool-action-control="approve" data-tool-action-id="${escapeHtml(action.id)}">승인</button>
         <button type="button" data-tool-action-control="reject" data-tool-action-id="${escapeHtml(action.id)}">보류</button>
@@ -4804,6 +4861,8 @@ function renderToolActions(actions = []) {
     const savedTemplate = getToolActionSavedTemplate(action);
     const outcomeBadges = renderToolActionOutcomeBadges(action, { boardTask, savedTemplate });
     const preflight = renderToolActionPreparationChecklist(action, { boardTask, savedTemplate });
+    const nextCommand = getToolActionNextStepCommand(action, { boardTask, savedTemplate });
+    const nextLabel = getToolActionNextStepLabel(action, { boardTask, savedTemplate }).replace(/^다음 버튼:\s*/, "");
     const resultPreview = renderToolActionResultPreview(action);
     return `
       <article class="tool-action-card is-${escapeHtml(status)}${dryRun ? " has-dry-run" : ""}">
@@ -4821,6 +4880,7 @@ function renderToolActions(actions = []) {
         ${outcomeBadges}
         ${resultPreview}
         <div class="tool-action-controls">
+          ${nextCommand ? `<button type="button" class="is-primary-next" data-tool-action-control="next-step" data-tool-action-id="${escapeHtml(action.id)}">${escapeHtml(nextLabel)}</button>` : ""}
           <button type="button" data-tool-action-control="preview" data-tool-action-id="${escapeHtml(action.id)}">미리보기</button>
           ${canDecide ? `
             <button type="button" data-tool-action-control="approve" data-tool-action-id="${escapeHtml(action.id)}">승인</button>
