@@ -6340,6 +6340,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-connector-card,
+.automation-health-card,
 .automation-background-card,
 .automation-policy-note,
 .automation-setup-guide,
@@ -6358,6 +6359,22 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   box-shadow: inset 3px 0 0 rgba(177, 147, 93, 0.26);
 }
 
+.automation-health-card {
+  display: grid;
+  gap: 6px;
+  background:
+    linear-gradient(135deg, rgba(244, 253, 248, 0.88), rgba(240, 250, 255, 0.72)),
+    rgba(255, 255, 255, 0.72);
+  box-shadow: inset 3px 0 0 rgba(67, 150, 103, 0.30);
+}
+
+.automation-health-card.is-warn {
+  background:
+    linear-gradient(135deg, rgba(255, 249, 238, 0.90), rgba(255, 255, 255, 0.72)),
+    rgba(255, 255, 255, 0.72);
+  box-shadow: inset 3px 0 0 rgba(216, 163, 68, 0.46);
+}
+
 .automation-connector-card.is-on {
   box-shadow: inset 3px 0 0 rgba(67, 150, 103, 0.40);
 }
@@ -6371,6 +6388,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-connector-card span,
+.automation-health-card span,
 .automation-background-card span {
   color: rgba(37, 72, 59, 0.62);
   font-size: 10px;
@@ -6380,6 +6398,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-connector-card strong,
+.automation-health-card strong,
 .automation-background-card strong,
 .automation-policy-note strong,
 .admin-automation-status strong {
@@ -6389,6 +6408,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-connector-card em,
+.automation-health-card em,
 .automation-background-card em,
 .automation-policy-note span,
 .automation-audit-head span,
@@ -6417,6 +6437,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-background-card,
+.automation-health-card,
 .automation-policy-note,
 .automation-setup-guide {
   display: grid;
@@ -6424,6 +6445,7 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-background-card p,
+.automation-health-card p,
 .automation-policy-note p,
 .automation-setup-guide p,
 .admin-automation-status p {
@@ -6494,10 +6516,21 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .automation-background-card div,
+.automation-health-card div,
 .admin-status-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.automation-health-card em.is-on {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.90);
+}
+
+.automation-health-card em.is-off {
+  color: #8a4c2b;
+  background: rgba(255, 231, 204, 0.90);
 }
 
 .automation-background-card em.is-on {

@@ -30,6 +30,8 @@ let remoteTemplatesLoading = false;
 let automationOpsLoaded = false;
 let automationOpsLoading = false;
 let automationConnectorStatus = null;
+let automationHealthStatus = null;
+let automationOpsWarning = "";
 let remoteAuditEvents = [];
 let automationOpsRefreshTimer = 0;
 let remoteToolActionsLoading = false;
@@ -1361,12 +1363,25 @@ async function loadAutomationOps({ force = false } = {}) {
   renderAutomationOpsMessage("자동화 운영 상태를 불러오는 중입니다...");
   renderAdminAutomationStatus("자동화 서버 상태를 확인하는 중입니다.");
   try {
-    const [connectorData, auditData] = await Promise.all([
+    const [healthResult, connectorResult, auditResult] = await Promise.allSettled([
+      automationStore.getHealth ? automationStore.getHealth() : Promise.resolve(null),
       automationStore.getConnectors(),
       automationStore.listAuditEvents({ limit: 8 }),
     ]);
-    automationConnectorStatus = connectorData ?? null;
-    remoteAuditEvents = Array.isArray(auditData?.events) ? auditData.events : [];
+    if (connectorResult.status === "rejected") throw connectorResult.reason;
+    automationHealthStatus = healthResult.status === "fulfilled" ? (healthResult.value ?? null) : null;
+    automationConnectorStatus = connectorResult.value ?? null;
+    remoteAuditEvents = auditResult.status === "fulfilled" && Array.isArray(auditResult.value?.events)
+      ? auditResult.value.events
+      : [];
+    automationOpsWarning = "";
+    if (auditResult.status === "rejected") {
+      automationOpsWarning = automationStore.isStorageMissing?.(auditResult.reason)
+        ? "서버 저장소가 아직 연결되지 않아 감사 로그와 실행 기록은 비어 있습니다."
+        : "최근 감사 로그를 불러오지 못했습니다.";
+    } else if (healthResult.status === "rejected") {
+      automationOpsWarning = "자동화 health 상태를 확인하지 못했습니다.";
+    }
     syncAutomationPolicyFromConnectorStatus(automationConnectorStatus);
     automationOpsLoaded = true;
     renderAutomationOps();
@@ -1437,6 +1452,7 @@ function renderAutomationOps() {
   const tools = automationConnectorStatus.tools ?? {};
   const background = automationConnectorStatus.background ?? {};
   const policy = automationConnectorStatus.policy ?? {};
+  const healthCard = renderAutomationHealthCard(automationHealthStatus, automationOpsWarning);
   const connectorRows = ["calendar", "mail", "drive", "notion"]
     .map((key) => renderAutomationConnectorCard(key, tools[key] ?? {}))
     .join("");
@@ -1451,6 +1467,7 @@ function renderAutomationOps() {
         <button type="button" id="refreshAutomationOpsButton">새로고침</button>
       </div>
     </div>
+    ${healthCard}
     <div class="automation-connector-grid">
       ${connectorRows}
     </div>
@@ -1477,6 +1494,26 @@ function renderAutomationOps() {
     ${auditRows || "<p class=\"automation-ops-empty\">아직 저장된 자동화 감사 로그가 없습니다.</p>"}
   `;
   bindAutomationOpsRefreshButton();
+}
+
+function renderAutomationHealthCard(health = {}, warning = "") {
+  const hasHealth = health && typeof health === "object";
+  const storage = hasHealth ? String(health.storage || "unknown") : "unknown";
+  const storageReady = storage === "d1";
+  const binding = hasHealth ? String(health.binding || "AGENT_DB") : "AGENT_DB";
+  const schema = hasHealth ? String(health.schema || "migrations/0001_agent_automation.sql") : "migrations/0001_agent_automation.sql";
+  return `
+    <div class="automation-health-card ${storageReady ? "is-ready" : "is-warn"}" aria-label="자동화 서버 저장소 상태">
+      <span>서버 저장소</span>
+      <strong>${storageReady ? "D1 연결됨" : "D1 미연결"}</strong>
+      <p>${escapeHtml(warning || (storageReady ? "실행 기록, 산출물, 감사 로그를 서버에 저장할 수 있습니다." : "AGENT_DB 바인딩이 없으면 브라우저 실행과 로컬 상태만 사용합니다."))}</p>
+      <div>
+        <em class="${storageReady ? "is-on" : "is-off"}">DB ${storageReady ? "ON" : "OFF"}</em>
+        <em>${escapeHtml(binding)}</em>
+        <em>${escapeHtml(schema)}</em>
+      </div>
+    </div>
+  `;
 }
 
 function renderAutomationConnectorCard(key, status = {}) {
@@ -1602,15 +1639,17 @@ function renderAdminAutomationStatus(message = "") {
   const connectedCount = statuses.filter((item) => item?.connected).length;
   const writableCount = statuses.filter((item) => item?.writeEnabled).length;
   const background = automationConnectorStatus.background ?? {};
+  const storageReady = automationHealthStatus?.storage === "d1";
   target.innerHTML = `
     <strong>자동화 서버 상태</strong>
     <div class="admin-status-pills">
+      <span>DB ${storageReady ? "ON" : "OFF"}</span>
       <span>${connectedCount}/${statuses.length || 4} 커넥터 준비</span>
       <span>${writableCount}개 쓰기 허용</span>
       <span>Queue ${background.queueConfigured ? "ON" : "OFF"}</span>
       <span>감사 로그 ${remoteAuditEvents.length}건</span>
     </div>
-    <p>${escapeHtml(background.writeEnabled ? "외부 도구 실행이 허용된 상태입니다." : "현재는 승인/감사 로그 중심의 안전 모드입니다.")}</p>
+    <p>${escapeHtml(automationOpsWarning || (background.writeEnabled ? "외부 도구 실행이 허용된 상태입니다." : "현재는 승인/감사 로그 중심의 안전 모드입니다."))}</p>
   `;
 }
 
@@ -5053,6 +5092,8 @@ function resetAutomationOpsCache() {
   automationOpsLoaded = false;
   automationOpsLoading = false;
   automationConnectorStatus = null;
+  automationHealthStatus = null;
+  automationOpsWarning = "";
   remoteAuditEvents = [];
   renderAutomationOps();
   renderAdminAutomationStatus();
