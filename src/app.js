@@ -3234,6 +3234,48 @@ async function handleToolActionBulk(command = "") {
     return;
   }
 
+  if (command === "next-step-all") {
+    const targets = getToolActionNextStepTargets(actions);
+    if (!targets.length) {
+      showToast("다음 단계로 진행할 자동화 후보가 없습니다.");
+      return;
+    }
+    toolActionBulkRunning = true;
+    try {
+      const summary = {
+        approve: 0,
+        "dry-run": 0,
+        execute: 0,
+        task: 0,
+        template: 0,
+      };
+      for (const action of targets) {
+        const result = await runToolActionNextStep(action, { silent: true });
+        if (Object.prototype.hasOwnProperty.call(summary, result)) summary[result] += 1;
+      }
+      renderKanban();
+      renderEmployeeDetail();
+      renderStats();
+      renderActiveView();
+      renderOrchestrationTemplates();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      scheduleAutomationOpsRefresh();
+      const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
+      if (openAction) openToolActionPreview(openAction);
+      const parts = [
+        summary.approve ? `승인 ${summary.approve}` : "",
+        summary["dry-run"] ? `리허설 ${summary["dry-run"]}` : "",
+        summary.execute ? `점검 ${summary.execute}` : "",
+        summary.task ? `할 일 ${summary.task}` : "",
+        summary.template ? `템플릿 ${summary.template}` : "",
+      ].filter(Boolean).join(" · ");
+      showToast(parts ? `다음 단계 전체 진행 · ${parts}` : "자동화 후보 다음 단계를 확인했습니다.");
+    } finally {
+      toolActionBulkRunning = false;
+    }
+    return;
+  }
+
   if (command === "prepare-safe-all") {
     const targets = getToolActionSafePrepareTargets(actions);
     if (!targets.length) {
@@ -3445,6 +3487,14 @@ function getToolActionSafePrepareTargets(actions = []) {
   return actions.filter((action) => {
     const status = normalizeToolActionStatus(action.status);
     return status !== "rejected" && status !== "cancelled" && !isToolActionSafePrepared(action);
+  });
+}
+
+function getToolActionNextStepTargets(actions = []) {
+  return actions.filter((action) => {
+    const boardTask = getToolActionBoardTask(action);
+    const savedTemplate = getToolActionSavedTemplate(action);
+    return Boolean(getToolActionNextStepCommand(action, { boardTask, savedTemplate }));
   });
 }
 
@@ -3891,8 +3941,8 @@ function getToolActionNextStepCommand(action = {}, { boardTask = null, savedTemp
   return "";
 }
 
-async function runToolActionNextStep(action = {}) {
-  if (!action?.id) return;
+async function runToolActionNextStep(action = {}, options = {}) {
+  if (!action?.id) return "";
   const boardTask = getToolActionBoardTask(action);
   const savedTemplate = getToolActionSavedTemplate(action);
   const command = getToolActionNextStepCommand(action, { boardTask, savedTemplate });
@@ -3903,32 +3953,33 @@ async function runToolActionNextStep(action = {}) {
     saveState();
     renderOrchestrationResults(buildStoredOrchestrationResult());
     if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-    showToast("자동화 후보를 승인했습니다. 다음 단계는 리허설입니다.");
-    return;
+    if (!options.silent) showToast("자동화 후보를 승인했습니다. 다음 단계는 리허설입니다.");
+    return command;
   }
 
   if (command === "dry-run") {
-    await runToolActionDryRun(action);
-    return;
+    await runToolActionDryRun(action, options);
+    return command;
   }
 
   if (command === "execute") {
-    await attemptToolActionExecution(action);
-    return;
+    await attemptToolActionExecution(action, options);
+    return command;
   }
 
   if (command === "task") {
-    createBoardTaskFromToolAction(action);
-    return;
+    createBoardTaskFromToolAction(action, options);
+    return command;
   }
 
   if (command === "template") {
-    saveToolActionAsAutomationTemplate(action);
-    return;
+    saveToolActionAsAutomationTemplate(action, options);
+    return command;
   }
 
-  showToast("이 자동화 후보는 안전 준비가 완료됐습니다.");
+  if (!options.silent) showToast("이 자동화 후보는 안전 준비가 완료됐습니다.");
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
+  return "";
 }
 
 function renderToolActionPreparationChecklist(action = {}, { boardTask = null, savedTemplate = null } = {}) {
@@ -4838,9 +4889,11 @@ function renderToolActions(actions = []) {
   const postProcessableActions = actions.filter((action) => ["approved", "executed"].includes(normalizeToolActionStatus(action.status)));
   const taskableCount = postProcessableActions.filter((action) => !getToolActionBoardTask(action)).length;
   const templatableCount = postProcessableActions.filter((action) => !getToolActionSavedTemplate(action)).length;
+  const nextStepCount = getToolActionNextStepTargets(actions).length;
   const safePrepareCount = getToolActionSafePrepareTargets(actions).length;
-  const bulkControls = (safePrepareCount || pendingCount || runnableCount || approvedCount || taskableCount || templatableCount) ? `
+  const bulkControls = (nextStepCount || safePrepareCount || pendingCount || runnableCount || approvedCount || taskableCount || templatableCount) ? `
     <div class="tool-action-bulk-actions" aria-label="자동화 후보 일괄 처리">
+      ${nextStepCount ? `<button type="button" class="is-primary" data-tool-action-bulk="next-step-all">다음 단계 전체 진행 <strong>${nextStepCount}</strong></button>` : ""}
       ${safePrepareCount ? `<button type="button" class="is-primary" data-tool-action-bulk="prepare-safe-all">안전 준비 전체 실행 <strong>${safePrepareCount}</strong></button>` : ""}
       ${pendingCount ? `<button type="button" data-tool-action-bulk="approve-all">전체 승인 <strong>${pendingCount}</strong></button>` : ""}
       ${runnableCount ? `<button type="button" data-tool-action-bulk="dry-run-all">전체 리허설 <strong>${runnableCount}</strong></button>` : ""}
