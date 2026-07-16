@@ -2827,11 +2827,79 @@ async function handleToolActionBulk(command = "") {
     } finally {
       toolActionBulkRunning = false;
     }
+    return;
+  }
+
+  if (command === "task-approved") {
+    const targets = actions.filter((action) => {
+      const status = normalizeToolActionStatus(action.status);
+      return ["approved", "executed"].includes(status) && !getToolActionBoardTask(action);
+    });
+    if (!targets.length) {
+      showToast("할 일판에 등록할 승인 후보가 없습니다.");
+      return;
+    }
+    toolActionBulkRunning = true;
+    try {
+      let createdCount = 0;
+      targets.forEach((action) => {
+        const task = createBoardTaskFromToolAction(action, { silent: true });
+        if (task) createdCount += 1;
+      });
+      renderKanban();
+      renderEmployeeDetail();
+      renderStats();
+      renderActiveView();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
+      if (openAction) openToolActionPreview(openAction);
+      showToast(`${createdCount}개 자동화 후보를 할 일판에 등록했습니다.`);
+    } finally {
+      toolActionBulkRunning = false;
+    }
+    return;
+  }
+
+  if (command === "template-approved") {
+    const targets = actions.filter((action) => {
+      const status = normalizeToolActionStatus(action.status);
+      return ["approved", "executed"].includes(status) && !getToolActionSavedTemplate(action);
+    });
+    if (!targets.length) {
+      showToast("템플릿으로 저장할 승인 후보가 없습니다.");
+      return;
+    }
+    toolActionBulkRunning = true;
+    try {
+      let savedCount = 0;
+      targets.forEach((action) => {
+        const template = saveToolActionAsAutomationTemplate(action, { silent: true });
+        if (template) savedCount += 1;
+      });
+      renderOrchestrationTemplates();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
+      if (openAction) openToolActionPreview(openAction);
+      showToast(`${savedCount}개 자동화 후보를 내 템플릿으로 저장했습니다.`);
+    } finally {
+      toolActionBulkRunning = false;
+    }
   }
 }
 
 function findToolAction(actionId) {
   return (state.orch.toolActions ?? []).find((action) => action.id === actionId) ?? null;
+}
+
+function getToolActionBoardTask(action = {}) {
+  const existingTaskId = action.metadata?.boardTaskId ?? "";
+  return existingTaskId ? getTask(existingTaskId) : null;
+}
+
+function getToolActionSavedTemplate(action = {}) {
+  const savedTemplateId = action.metadata?.savedTemplateId ?? "";
+  if (!savedTemplateId) return null;
+  return hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === savedTemplateId) ?? null;
 }
 
 function applyServerToolActionResult(action = {}, data = {}) {
@@ -2981,23 +3049,25 @@ async function attemptToolActionExecution(action = {}, options = {}) {
   if (!options.silent) showToast(result.ok ? "자동화 후보를 실제 실행했습니다." : "안전 정책에 따라 실제 실행을 막고 패키지만 남겼습니다.");
 }
 
-function createBoardTaskFromToolAction(action = {}) {
+function createBoardTaskFromToolAction(action = {}, options = {}) {
   const status = normalizeToolActionStatus(action.status);
   if (status === "pending") {
-    showToast("승인 후 할 일판에 등록할 수 있습니다.");
+    if (!options.silent) showToast("승인 후 할 일판에 등록할 수 있습니다.");
     return null;
   }
   if (status === "rejected" || status === "cancelled") {
-    showToast("보류된 자동화 후보는 할 일판에 등록하지 않았습니다.");
+    if (!options.silent) showToast("보류된 자동화 후보는 할 일판에 등록하지 않았습니다.");
     return null;
   }
 
   const existingTaskId = action.metadata?.boardTaskId ?? "";
   const existingTask = existingTaskId ? getTask(existingTaskId) : null;
   if (existingTask) {
-    openTaskDrawer();
-    openTaskDetailModal(existingTask.id);
-    showToast("이미 등록된 할 일판 업무를 열었습니다.");
+    if (!options.silent) {
+      openTaskDrawer();
+      openTaskDetailModal(existingTask.id);
+      showToast("이미 등록된 할 일판 업무를 열었습니다.");
+    }
     return existingTask;
   }
 
@@ -3008,7 +3078,7 @@ function createBoardTaskFromToolAction(action = {}) {
     || state.employees[0]?.id
     || "";
   if (!assigneeId) {
-    showToast("담당 직원을 찾지 못해 업무를 만들지 못했습니다.");
+    if (!options.silent) showToast("담당 직원을 찾지 못해 업무를 만들지 못했습니다.");
     return null;
   }
 
@@ -3045,12 +3115,14 @@ function createBoardTaskFromToolAction(action = {}) {
   renderActiveView();
   renderOrchestrationResults(buildStoredOrchestrationResult());
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-  openTaskDrawer();
-  showToast("자동화 후보를 할 일판 업무로 등록했습니다.");
+  if (!options.silent) {
+    openTaskDrawer();
+    showToast("자동화 후보를 할 일판 업무로 등록했습니다.");
+  }
   return task;
 }
 
-function saveToolActionAsAutomationTemplate(action = {}) {
+function saveToolActionAsAutomationTemplate(action = {}, options = {}) {
   if (!action?.id) return null;
   const payload = action.payload ?? {};
   const goal = [
@@ -3062,7 +3134,7 @@ function saveToolActionAsAutomationTemplate(action = {}) {
     payload.contentPreview ? `\n[참고 산출물]\n${payload.contentPreview}` : "",
   ].filter(Boolean).join("\n").trim();
   if (!goal) {
-    showToast("저장할 템플릿 본문을 찾지 못했습니다.");
+    if (!options.silent) showToast("저장할 템플릿 본문을 찾지 못했습니다.");
     return null;
   }
 
@@ -3092,7 +3164,7 @@ function saveToolActionAsAutomationTemplate(action = {}) {
   renderOrchestrationTemplates();
   renderOrchestrationResults(buildStoredOrchestrationResult());
   if (refs.orchestrationDetail.dataset.toolActionId === action.id) openToolActionPreview(action);
-  showToast("자동화 후보를 내 템플릿으로 저장했습니다.");
+  if (!options.silent) showToast("자동화 후보를 내 템플릿으로 저장했습니다.");
   return template;
 }
 
@@ -3233,12 +3305,10 @@ function openToolActionPreview(action = {}) {
   const payload = action.payload ?? {};
   const status = normalizeToolActionStatus(action.status);
   const dryRun = action.metadata?.dryRun;
-  const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
+  const boardTask = getToolActionBoardTask(action);
   const executionAttempt = action.metadata?.executionAttempt;
   const executionPackage = executionAttempt?.package ?? dryRun?.package ?? null;
-  const savedTemplate = action.metadata?.savedTemplateId
-    ? hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === action.metadata.savedTemplateId)
-    : null;
+  const savedTemplate = getToolActionSavedTemplate(action);
   const safety = buildToolActionSafetySummary(action);
   refs.orchestrationDetailContent.innerHTML = `
     <div class="orch-detail-meta">
@@ -3934,11 +4004,16 @@ function renderToolActions(actions = []) {
   const pendingCount = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending").length;
   const runnableCount = actions.filter((action) => ["pending", "approved"].includes(normalizeToolActionStatus(action.status))).length;
   const approvedCount = actions.filter((action) => normalizeToolActionStatus(action.status) === "approved").length;
-  const bulkControls = (pendingCount || runnableCount || approvedCount) ? `
+  const postProcessableActions = actions.filter((action) => ["approved", "executed"].includes(normalizeToolActionStatus(action.status)));
+  const taskableCount = postProcessableActions.filter((action) => !getToolActionBoardTask(action)).length;
+  const templatableCount = postProcessableActions.filter((action) => !getToolActionSavedTemplate(action)).length;
+  const bulkControls = (pendingCount || runnableCount || approvedCount || taskableCount || templatableCount) ? `
     <div class="tool-action-bulk-actions" aria-label="자동화 후보 일괄 처리">
       ${pendingCount ? `<button type="button" data-tool-action-bulk="approve-all">전체 승인 <strong>${pendingCount}</strong></button>` : ""}
       ${runnableCount ? `<button type="button" data-tool-action-bulk="dry-run-all">전체 리허설 <strong>${runnableCount}</strong></button>` : ""}
       ${approvedCount ? `<button type="button" data-tool-action-bulk="execute-approved">승인 후보 실행 점검 <strong>${approvedCount}</strong></button>` : ""}
+      ${taskableCount ? `<button type="button" data-tool-action-bulk="task-approved">할 일판 일괄 등록 <strong>${taskableCount}</strong></button>` : ""}
+      ${templatableCount ? `<button type="button" data-tool-action-bulk="template-approved">템플릿 일괄 저장 <strong>${templatableCount}</strong></button>` : ""}
       <em>외부 전송 없이 서버/로컬 안전 모드로 기록합니다.</em>
     </div>
   ` : "";
@@ -3948,11 +4023,9 @@ function renderToolActions(actions = []) {
     const canComplete = status === "approved";
     const canDryRun = status === "pending" || status === "approved";
     const dryRun = action.metadata?.dryRun;
-    const boardTask = action.metadata?.boardTaskId ? getTask(action.metadata.boardTaskId) : null;
+    const boardTask = getToolActionBoardTask(action);
     const executionAttempt = action.metadata?.executionAttempt;
-    const savedTemplate = action.metadata?.savedTemplateId
-      ? hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === action.metadata.savedTemplateId)
-      : null;
+    const savedTemplate = getToolActionSavedTemplate(action);
     const outcomeBadges = renderToolActionOutcomeBadges(action, { boardTask, savedTemplate });
     const resultPreview = renderToolActionResultPreview(action);
     return `

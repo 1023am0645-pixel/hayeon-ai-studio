@@ -7093,6 +7093,10 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 }
 
 .tool-action-bulk-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   min-height: 30px;
   padding: 6px 10px;
   color: #25465b;
@@ -7736,6 +7740,10 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   .tool-action-bulk-actions button,
   .tool-action-controls button {
     flex: 1 1 auto;
+  }
+
+  .tool-action-bulk-actions button {
+    min-width: min(100%, 142px);
   }
 
   .tool-action-bulk-actions em {
