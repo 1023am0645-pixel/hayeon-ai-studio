@@ -1146,6 +1146,7 @@ function renderOrchestrationTemplates() {
               <em>${escapeHtml(getToolActionTypeLabel(template.actionType))}</em>
             </button>
             <div class="orch-template-actions" aria-label="${escapeHtml(template.label)} 템플릿 관리">
+              <button type="button" data-saved-template-action="run" data-saved-template-id="${escapeHtml(template.id)}">실행</button>
               <button type="button" data-saved-template-action="copy" data-saved-template-id="${escapeHtml(template.id)}">복사</button>
               <button type="button" data-saved-template-action="delete" data-saved-template-id="${escapeHtml(template.id)}">삭제</button>
             </div>
@@ -1173,6 +1174,10 @@ async function handleOrchestrationTemplateClick(event) {
     }
     if (action === "delete") {
       deleteSavedAutomationTemplate(template);
+      return;
+    }
+    if (action === "run") {
+      runAutomationTemplateNow(template);
       return;
     }
     if (!orchestrationUi.isRunning && !refs.orchestrationGoal.disabled) {
@@ -1203,6 +1208,14 @@ function loadAutomationTemplateIntoGoal(template = {}) {
   refs.orchestrationGoal.dataset.scenarioId = "";
   refs.orchestrationGoal.focus();
   showToast(`${template.label} 템플릿을 입력했습니다. 필요하면 수정 후 실행하세요.`);
+}
+
+function runAutomationTemplateNow(template = {}) {
+  if (!template?.goal || orchestrationUi.isRunning || refs.orchestrationGoal.disabled) return;
+  refs.orchestrationGoal.value = template.goal;
+  refs.orchestrationGoal.dataset.scenarioId = "";
+  refs.orchestrationForm.requestSubmit();
+  showToast(`${template.label} 템플릿 실행을 시작합니다.`);
 }
 
 function buildAutomationTemplateMarkdown(template = {}) {

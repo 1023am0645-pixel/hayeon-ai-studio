@@ -6217,6 +6217,18 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   outline: none;
 }
 
+.orch-template-actions button[data-saved-template-action="run"] {
+  color: #214c3b;
+  background: rgba(220, 247, 232, 0.90);
+  border-color: rgba(83, 156, 122, 0.24);
+}
+
+.orch-template-actions button[data-saved-template-action="run"]:hover,
+.orch-template-actions button[data-saved-template-action="run"]:focus-visible {
+  color: #173629;
+  background: rgba(202, 239, 219, 0.98);
+}
+
 .orch-template-actions button[data-saved-template-action="delete"] {
   color: #8a3b2f;
   border-color: rgba(191, 95, 54, 0.18);
