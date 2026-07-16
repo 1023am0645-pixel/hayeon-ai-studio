@@ -1502,16 +1502,45 @@ function renderAutomationHealthCard(health = {}, warning = "") {
   const storageReady = storage === "d1";
   const binding = hasHealth ? String(health.binding || "AGENT_DB") : "AGENT_DB";
   const schema = hasHealth ? String(health.schema || "migrations/0001_agent_automation.sql") : "migrations/0001_agent_automation.sql";
+  const summary = health?.storageSummary && typeof health.storageSummary === "object" ? health.storageSummary : null;
+  const lastUpdated = summary?.lastUpdated ? formatRemoteDate(summary.lastUpdated) : "기록 없음";
   return `
     <div class="automation-health-card ${storageReady ? "is-ready" : "is-warn"}" aria-label="자동화 서버 저장소 상태">
       <span>서버 저장소</span>
       <strong>${storageReady ? "D1 연결됨" : "D1 미연결"}</strong>
       <p>${escapeHtml(warning || (storageReady ? "실행 기록, 산출물, 감사 로그를 서버에 저장할 수 있습니다." : "AGENT_DB 바인딩이 없으면 브라우저 실행과 로컬 상태만 사용합니다."))}</p>
+      ${summary ? `
+        <div class="automation-health-metrics" aria-label="자동화 저장소 요약">
+          <span><strong>${Number(summary.totalRecords ?? 0)}</strong><em>저장 레코드</em></span>
+          <span><strong>${Number(summary.readyTables ?? 0)}/${Number(summary.tableCount ?? 0)}</strong><em>테이블 준비</em></span>
+          <span><strong>${Number(summary.missingTables ?? 0)}</strong><em>누락 테이블</em></span>
+          <span><strong>${escapeHtml(lastUpdated)}</strong><em>최근 저장</em></span>
+        </div>
+        ${renderAutomationStorageTablePills(summary.tables)}
+      ` : ""}
       <div>
         <em class="${storageReady ? "is-on" : "is-off"}">DB ${storageReady ? "ON" : "OFF"}</em>
         <em>${escapeHtml(binding)}</em>
         <em>${escapeHtml(schema)}</em>
       </div>
+    </div>
+  `;
+}
+
+function renderAutomationStorageTablePills(tables = {}) {
+  const rows = Object.entries(tables ?? {});
+  if (!rows.length) return "";
+  return `
+    <div class="automation-storage-pills" aria-label="자동화 저장소 테이블별 상태">
+      ${rows.map(([key, table]) => {
+        const status = table?.status === "ready" ? "is-ready" : table?.status === "missing" ? "is-missing" : "is-error";
+        return `
+          <span class="${status}" title="${escapeHtml(key)}">
+            <strong>${escapeHtml(table?.label || key)}</strong>
+            <em>${table?.status === "ready" ? `${Number(table?.count ?? 0)}건` : table?.status === "missing" ? "누락" : "확인 실패"}</em>
+          </span>
+        `;
+      }).join("")}
     </div>
   `;
 }

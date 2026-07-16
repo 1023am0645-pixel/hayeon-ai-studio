@@ -41,6 +41,7 @@ async function handleAutomationRoute(request, env, url) {
   if (context.error) return context.error;
 
   if (url.pathname === "/api/automation/health" && request.method === "GET") {
+    const storageSummary = env.AGENT_DB ? await getAutomationStorageSummary(env.AGENT_DB) : null;
     return json({
       ok: true,
       text: "",
@@ -48,6 +49,7 @@ async function handleAutomationRoute(request, env, url) {
         storage: env.AGENT_DB ? "d1" : "missing",
         binding: "AGENT_DB",
         schema: "migrations/0001_agent_automation.sql",
+        storageSummary,
         externalTools: getExternalToolStatus(env),
         background: getBackgroundExecutionStatus(env),
       },
@@ -225,6 +227,79 @@ function getBackgroundExecutionStatus(env) {
     writeEnabled: false,
     note: "Cloudflare Queue/Cron을 연결하기 전까지 브라우저 중심 실행과 서버 저장만 사용합니다.",
   };
+}
+
+async function getAutomationStorageSummary(db) {
+  const tableSpecs = [
+    { name: "agent_runs", label: "Runs", dateColumn: "updated_at" },
+    { name: "agent_run_items", label: "Items", dateColumn: "updated_at" },
+    { name: "tasks", label: "Tasks", dateColumn: "updated_at" },
+    { name: "chat_messages", label: "Chat", dateColumn: "created_at" },
+    { name: "artifacts", label: "Artifacts", dateColumn: "updated_at" },
+    { name: "tool_actions", label: "Actions", dateColumn: "updated_at" },
+    { name: "automation_templates", label: "Templates", dateColumn: "updated_at" },
+    { name: "automation_audit_events", label: "Audit", dateColumn: "created_at" },
+  ];
+  const tables = {};
+  let totalRecords = 0;
+  let readyTables = 0;
+  let missingTables = 0;
+  let errorTables = 0;
+  let lastUpdated = "";
+
+  for (const spec of tableSpecs) {
+    try {
+      const row = await db.prepare(`
+        SELECT COUNT(*) AS count, MAX(${spec.dateColumn}) AS last_updated
+        FROM ${spec.name}
+      `).first();
+      const count = Number(row?.count ?? 0);
+      const updated = row?.last_updated ?? "";
+      tables[spec.name] = {
+        label: spec.label,
+        status: "ready",
+        count,
+        lastUpdated: updated,
+      };
+      totalRecords += count;
+      readyTables += 1;
+      if (updated && (!lastUpdated || new Date(updated).getTime() > new Date(lastUpdated).getTime())) {
+        lastUpdated = updated;
+      }
+    } catch (error) {
+      if (isMissingTableError(error)) {
+        tables[spec.name] = {
+          label: spec.label,
+          status: "missing",
+          count: 0,
+          lastUpdated: "",
+        };
+        missingTables += 1;
+        continue;
+      }
+      tables[spec.name] = {
+        label: spec.label,
+        status: "error",
+        count: 0,
+        lastUpdated: "",
+      };
+      errorTables += 1;
+    }
+  }
+
+  return {
+    tableCount: tableSpecs.length,
+    readyTables,
+    missingTables,
+    errorTables,
+    totalRecords,
+    lastUpdated,
+    tables,
+  };
+}
+
+function isMissingTableError(error) {
+  return /no such table/i.test(String(error?.message || error));
 }
 
 function validateApiRequest(request, env) {

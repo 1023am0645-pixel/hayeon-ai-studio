@@ -6533,6 +6533,78 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
   background: rgba(255, 231, 204, 0.90);
 }
 
+.automation-health-metrics {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.automation-health-metrics span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(77, 151, 126, 0.10);
+  border-radius: 10px;
+}
+
+.automation-health-metrics strong {
+  overflow: hidden;
+  color: #244234;
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-health-metrics em {
+  color: rgba(37, 72, 59, 0.58);
+  background: transparent;
+  padding: 0;
+  font-size: 10px;
+}
+
+.automation-storage-pills {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.automation-storage-pills span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.automation-storage-pills span.is-ready {
+  color: #1f6a43;
+  background: rgba(209, 247, 225, 0.86);
+}
+
+.automation-storage-pills span.is-missing {
+  color: #8a4c2b;
+  background: rgba(255, 231, 204, 0.88);
+}
+
+.automation-storage-pills span.is-error {
+  color: #8a2e2e;
+  background: rgba(255, 224, 224, 0.88);
+}
+
+.automation-storage-pills strong,
+.automation-storage-pills em {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
 .automation-background-card em.is-on {
   color: #1f6a43;
   background: rgba(209, 247, 225, 0.90);
@@ -7967,6 +8039,10 @@ body.floor-detail-active .floor-detail-grid .employee-token:has(.avatar-image-wr
 
   .automation-connector-grid {
     grid-template-columns: 1fr;
+  }
+
+  .automation-health-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .tool-action-card {
