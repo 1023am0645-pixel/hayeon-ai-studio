@@ -2771,6 +2771,71 @@ async function handleToolActionBulk(command = "") {
   }
   const actions = state.orch.toolActions ?? [];
 
+  if (command === "prepare-safe-all") {
+    const targets = getToolActionSafePrepareTargets(actions);
+    if (!targets.length) {
+      showToast("안전 준비가 필요한 자동화 후보가 없습니다.");
+      return;
+    }
+    toolActionBulkRunning = true;
+    try {
+      const summary = {
+        approved: 0,
+        dryRun: 0,
+        checked: 0,
+        tasks: 0,
+        templates: 0,
+      };
+      for (const action of targets) {
+        let status = normalizeToolActionStatus(action.status);
+        if (status === "pending") {
+          setToolActionDecision(action, "approved");
+          updateRemoteToolAction(action);
+          summary.approved += 1;
+          status = "approved";
+        }
+        if (!action.metadata?.dryRun && ["approved", "executed"].includes(status)) {
+          await runToolActionDryRun(action, { silent: true });
+          summary.dryRun += 1;
+        }
+        status = normalizeToolActionStatus(action.status);
+        if (!action.metadata?.executionAttempt && status === "approved") {
+          await attemptToolActionExecution(action, { silent: true });
+          summary.checked += 1;
+        }
+        status = normalizeToolActionStatus(action.status);
+        if (["approved", "executed"].includes(status) && !getToolActionBoardTask(action)) {
+          const task = createBoardTaskFromToolAction(action, { silent: true });
+          if (task) summary.tasks += 1;
+        }
+        if (["approved", "executed"].includes(normalizeToolActionStatus(action.status)) && !getToolActionSavedTemplate(action)) {
+          const template = saveToolActionAsAutomationTemplate(action, { silent: true });
+          if (template) summary.templates += 1;
+        }
+      }
+      renderKanban();
+      renderEmployeeDetail();
+      renderStats();
+      renderActiveView();
+      renderOrchestrationTemplates();
+      renderOrchestrationResults(buildStoredOrchestrationResult());
+      scheduleAutomationOpsRefresh();
+      const openAction = findToolAction(refs.orchestrationDetail.dataset.toolActionId);
+      if (openAction) openToolActionPreview(openAction);
+      const parts = [
+        summary.approved ? `승인 ${summary.approved}` : "",
+        summary.dryRun ? `리허설 ${summary.dryRun}` : "",
+        summary.checked ? `점검 ${summary.checked}` : "",
+        summary.tasks ? `할 일 ${summary.tasks}` : "",
+        summary.templates ? `템플릿 ${summary.templates}` : "",
+      ].filter(Boolean).join(" · ");
+      showToast(parts ? `안전 준비 완료 · ${parts}` : "자동화 후보 안전 준비 상태를 확인했습니다.");
+    } finally {
+      toolActionBulkRunning = false;
+    }
+    return;
+  }
+
   if (command === "approve-all") {
     const targets = actions.filter((action) => normalizeToolActionStatus(action.status) === "pending");
     if (!targets.length) {
@@ -2900,6 +2965,24 @@ function getToolActionSavedTemplate(action = {}) {
   const savedTemplateId = action.metadata?.savedTemplateId ?? "";
   if (!savedTemplateId) return null;
   return hydrateAutomationTemplates(state.automationTemplates).find((template) => template.id === savedTemplateId) ?? null;
+}
+
+function isToolActionSafePrepared(action = {}) {
+  const status = normalizeToolActionStatus(action.status);
+  if (status === "rejected" || status === "cancelled") return true;
+  const canPostProcess = ["approved", "executed"].includes(status);
+  return canPostProcess
+    && Boolean(action.metadata?.dryRun)
+    && Boolean(action.metadata?.executionAttempt || status === "executed")
+    && Boolean(getToolActionBoardTask(action))
+    && Boolean(getToolActionSavedTemplate(action));
+}
+
+function getToolActionSafePrepareTargets(actions = []) {
+  return actions.filter((action) => {
+    const status = normalizeToolActionStatus(action.status);
+    return status !== "rejected" && status !== "cancelled" && !isToolActionSafePrepared(action);
+  });
 }
 
 function applyServerToolActionResult(action = {}, data = {}) {
@@ -4007,8 +4090,10 @@ function renderToolActions(actions = []) {
   const postProcessableActions = actions.filter((action) => ["approved", "executed"].includes(normalizeToolActionStatus(action.status)));
   const taskableCount = postProcessableActions.filter((action) => !getToolActionBoardTask(action)).length;
   const templatableCount = postProcessableActions.filter((action) => !getToolActionSavedTemplate(action)).length;
-  const bulkControls = (pendingCount || runnableCount || approvedCount || taskableCount || templatableCount) ? `
+  const safePrepareCount = getToolActionSafePrepareTargets(actions).length;
+  const bulkControls = (safePrepareCount || pendingCount || runnableCount || approvedCount || taskableCount || templatableCount) ? `
     <div class="tool-action-bulk-actions" aria-label="자동화 후보 일괄 처리">
+      ${safePrepareCount ? `<button type="button" class="is-primary" data-tool-action-bulk="prepare-safe-all">안전 준비 전체 실행 <strong>${safePrepareCount}</strong></button>` : ""}
       ${pendingCount ? `<button type="button" data-tool-action-bulk="approve-all">전체 승인 <strong>${pendingCount}</strong></button>` : ""}
       ${runnableCount ? `<button type="button" data-tool-action-bulk="dry-run-all">전체 리허설 <strong>${runnableCount}</strong></button>` : ""}
       ${approvedCount ? `<button type="button" data-tool-action-bulk="execute-approved">승인 후보 실행 점검 <strong>${approvedCount}</strong></button>` : ""}
